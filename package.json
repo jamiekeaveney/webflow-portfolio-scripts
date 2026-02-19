@@ -1,14 +1,12 @@
 {
   "name": "portfolio-assets",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
-
   "scripts": {
     "build": "esbuild src/app.js --bundle --minify --sourcemap --outfile=assets/js/app.min.js",
     "dev": "esbuild src/app.js --bundle --sourcemap --outfile=assets/js/app.js --watch"
   },
-
   "devDependencies": {
     "esbuild": "^0.24.0"
   }
