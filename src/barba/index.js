@@ -2,7 +2,11 @@ import { runCleanups } from "../core/cleanup.js";
 import { stopLenis, destroyLenis } from "../core/lenis.js";
 import { killAllScrollTriggers } from "../core/scrolltrigger.js";
 import { loaderShow, loaderHide } from "../features/loader.js";
-import { syncWebflowPageIdFromNextHtml, reinitWebflowIX2, resetWCurrent } from "../core/webflow.js";
+import {
+  syncWebflowPageIdFromNextHtml,
+  reinitWebflowIX2,
+  resetWCurrent
+} from "../core/webflow.js";
 import { destroyPage } from "../pages/index.js";
 
 function resetScrollTop() {
@@ -10,14 +14,18 @@ function resetScrollTop() {
 }
 
 function getNamespace(data, which = "next") {
-  try { return data && data[which] ? (data[which].namespace || "") : ""; } catch (_) { return ""; }
+  try {
+    return data && data[which] ? (data[which].namespace || "") : "";
+  } catch (_) {
+    return "";
+  }
 }
 
 /**
- * Improvements vs the "kill everything" approach:
- * - Prefer view cleanup registry for per-page listeners/observers/tweens.
- * - Only fall back to ScrollTrigger global kill if something leaks.
- * - Ensure Webflow page-id + IX2 gets re-initialised after container swap.
+ * Pro setup notes:
+ * - Per-view cleanup registry runs on leave
+ * - Webflow page-id sync + IX2 re-init after container swap
+ * - Prevent handles external/new-tab/hash/mail/tel + manual opt-out attribute
  */
 export function initBarba({ initContainer }) {
   if (!window.barba) {
@@ -25,109 +33,131 @@ export function initBarba({ initContainer }) {
     return;
   }
 
-  // Prevent Barba on explicit opt-out links
-  function preventBarba({ el }) {
-    return !!(el && el.hasAttribute && el.hasAttribute("data-barba-prevent"));
-  }
-
-  // Optional: avoid Barba for external links / new tabs automatically
-  // (Barba does this fairly well already, but this adds safety)
-  window.barba.hooks.prevent((data) => {
-    const el = data && data.el;
+  // Correct place to prevent navigation in Barba is the `prevent` option.
+  function preventBarba({ el } = {}) {
     if (!el) return false;
-    const href = el.getAttribute && el.getAttribute("href");
+
+    // Manual opt-out (add this attribute to any link you don't want Barba to intercept)
+    if (el.hasAttribute?.("data-barba-prevent")) return true;
+
+    const href = el.getAttribute?.("href");
     if (!href) return false;
+
+    // New tab
     if (el.target === "_blank") return true;
+
+    // Hash links / anchors
+    if (href.startsWith("#")) return true;
+
+    // Protocol links
+    if (href.startsWith("mailto:") || href.startsWith("tel:")) return true;
+
+    // External links
     if (/^https?:\/\//i.test(href)) {
       try {
-        const url = new URL(href, location.href);
-        if (url.origin !== location.origin) return true;
+        const url = new URL(href, window.location.href);
+        if (url.origin !== window.location.origin) return true;
       } catch (_) {}
     }
-    return false;
-  });
 
-  // Set manual scroll restoration (recommended with SPA transitions)
-  try { history.scrollRestoration = "manual"; } catch (_) {}
+    return false;
+  }
+
+  // Manual scroll restoration is recommended for SPA transitions
+  try {
+    history.scrollRestoration = "manual";
+  } catch (_) {}
 
   // Global leave: stop scroll + cleanup view-level resources
   window.barba.hooks.leave((data) => {
     stopLenis();
+
+    // kill any listeners/observers/timelines created by the current view
     runCleanups();
+
+    // fully tear down Lenis instance
     destroyLenis();
 
-    // If anything slipped past the cleanup registry, this prevents ST stacking:
+    // fallback safety: prevent ST stacking if anything slipped past cleanup registry
     killAllScrollTriggers();
 
-    // Per-page destroy hook (optional)
+    // per-page destroy hook (optional)
     const ns = getNamespace(data, "current");
     destroyPage(ns);
   });
 
-  // Global enter: scroll to top before we show the new container
+  // Global enter: scroll to top
   window.barba.hooks.enter(() => resetScrollTop());
 
   window.barba.init({
     preventRunning: true,
     prevent: preventBarba,
 
-    transitions: [{
-      name: "site",
+    transitions: [
+      {
+        name: "site",
 
-      async once(data) {
-        resetWCurrent();
+        async once(data) {
+          resetWCurrent();
 
-        // On first load, hide loader then init
-        await loaderHide();
+          // Hide loader (safe no-op if you don't have loader elements)
+          await loaderHide();
 
-        const container = data?.next?.container || document;
-        const ns = getNamespace(data, "next");
+          const container = data?.next?.container || document;
+          const ns = getNamespace(data, "next");
 
-        initContainer(container, {
-          isFirstLoad: true,
-          isNavigation: false,
-          namespace: ns
-        });
-      },
+          initContainer(container, {
+            isFirstLoad: true,
+            isNavigation: false,
+            namespace: ns
+          });
+        },
 
-      async leave(data) {
-        await loaderShow();
+        async leave(data) {
+          await loaderShow();
 
-        // Fade out current container for polish
-        if (window.gsap) {
-          await window.gsap.to(data.current.container, { autoAlpha: 0, duration: 0.35 });
+          if (window.gsap) {
+            await window.gsap.to(data.current.container, {
+              autoAlpha: 0,
+              duration: 0.35
+            });
+          }
+
+          // Explicit remove helps avoid odd overlaps in some Webflow setups
+          try {
+            data.current.container.remove();
+          } catch (_) {}
+        },
+
+        enter(data) {
+          if (window.gsap) window.gsap.set(data.next.container, { autoAlpha: 0 });
+        },
+
+        async afterEnter(data) {
+          // Webflow: sync page id BEFORE ix2 init
+          syncWebflowPageIdFromNextHtml(data?.next?.html || "");
+          reinitWebflowIX2();
+          resetWCurrent();
+
+          const container = data?.next?.container || document;
+          const ns = getNamespace(data, "next");
+
+          initContainer(container, {
+            isFirstLoad: false,
+            isNavigation: true,
+            namespace: ns
+          });
+
+          if (window.gsap) {
+            await window.gsap.to(data.next.container, {
+              autoAlpha: 1,
+              duration: 0.55
+            });
+          }
+
+          await loaderHide();
         }
-
-        // Barba removes old container automatically unless you do manual removal.
-        // Keeping it explicit avoids odd overlaps in Webflow sometimes:
-        try { data.current.container.remove(); } catch (_) {}
-      },
-
-      enter(data) {
-        if (window.gsap) window.gsap.set(data.next.container, { autoAlpha: 0 });
-      },
-
-      async afterEnter(data) {
-        // Webflow: sync page id BEFORE ix2 init
-        syncWebflowPageIdFromNextHtml(data?.next?.html || "");
-        reinitWebflowIX2();
-        resetWCurrent();
-
-        const container = data?.next?.container || document;
-        const ns = getNamespace(data, "next");
-
-        initContainer(container, {
-          isFirstLoad: false,
-          isNavigation: true,
-          namespace: ns
-        });
-
-        if (window.gsap) {
-          await window.gsap.to(data.next.container, { autoAlpha: 1, duration: 0.55 });
-        }
-
-        await loaderHide();
       }
-    }]
+    ]
   });
 }
