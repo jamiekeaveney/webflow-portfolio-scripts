@@ -1,4 +1,7 @@
-/* Lenis overrides */
+/* ==========================================================================
+   Lenis overrides
+   ========================================================================== */
+
 html.lenis,
 html.lenis body {
   height: auto;
@@ -16,12 +19,106 @@ html.lenis body {
   overflow: hidden;
 }
 
-/* Your helpers */
-.single-line-wrap { overflow: hidden; display: block; }
-.single-line { display: block; will-change: transform; }
-.single-letter { display: inline-block; will-change: transform; }
+/* ==========================================================================
+   State + Trigger utilities
+   ========================================================================== */
 
-svg[viewBox] { overflow: visible !important; }
+[data-state] {
+  --_state---true: 1;
+  --_state---false: 0;
+}
+
+.is-active,
+[data-state~="checked"]:is(:checked, :has(:checked)),
+[data-state~="current"]:is(.w--current, :has(.w--current)),
+[data-state~="open"]:is(.w--open, :has(.w--open)),
+[data-state~="expanded"]:is([aria-expanded="true"], :has([aria-expanded="true"])),
+[data-state~="external"]:is([target="_blank"], :has([target="_blank"])) {
+  --_state---true: 0;
+  --_state---false: 1;
+}
+
+/* Tablet and down */
+@media (max-width: 991px) {
+  [data-trigger~="group"]:has([data-state~="current"].w--current)
+    [data-trigger~="hover-other"]:not(.w--current) {
+    --_trigger---on: 0;
+    --_trigger---off: 1;
+  }
+}
+
+/* Desktop */
+@media (min-width: 992px) {
+  [data-trigger~="group"]:has(
+      [data-state~="current"].w--current:not([data-current="no-desktop"])
+    )
+    [data-trigger~="hover-other"]:not(.w--current) {
+    --_trigger---on: 0;
+    --_trigger---off: 1;
+  }
+}
+
+/* Focus behaviour (keep Webflow designer support) */
+.wf-design-mode [data-trigger~="preview"],
+[data-trigger~="focus"]:is(:focus-visible, :has(:focus-visible)),
+[data-trigger~="group"]:has(
+    [data-trigger~="focus-other"]:focus-visible,
+    [data-trigger~="focus-other"] :focus-visible
+  )
+  [data-trigger~="focus-other"]:not(:focus-visible, :has(:focus-visible)) {
+  --_trigger---on: 0;
+  --_trigger---off: 1;
+}
+
+/* Hover behaviour */
+@media (hover: hover) {
+  [data-trigger~="hover"]:hover {
+    --_trigger---on: 0;
+    --_trigger---off: 1;
+  }
+
+  [data-trigger~="group"]:has([data-trigger~="hover-other"]:hover)
+    [data-trigger~="hover-other"]:not(:hover) {
+    --_trigger---on: 0;
+    --_trigger---off: 1;
+  }
+
+  [data-trigger~="hover-other"]:hover {
+    --_trigger---on: 1 !important;
+    --_trigger---off: 0 !important;
+  }
+}
+
+/* Touch devices */
+@media (hover: none) {
+  [data-trigger~="mobile"] {
+    --_trigger---on: 0;
+    --_trigger---off: 1;
+  }
+}
+
+/* ==========================================================================
+   Helpers
+   ========================================================================== */
+
+.single-line-wrap {
+  overflow: hidden;
+  display: block;
+}
+
+.single-line {
+  display: block;
+  will-change: transform;
+}
+
+.single-letter {
+  display: inline-block;
+  will-change: transform;
+}
+
+svg[viewBox] {
+  overflow: visible !important;
+}
 
 .logo .logo-letter {
   transition-delay: calc(0.02s * var(--i));
