@@ -1,13 +1,14 @@
 {
-  "name": "webflow-portfolio-barba",
+  "name": "portfolio-assets",
   "private": true,
   "version": "1.0.0",
   "type": "module",
+
   "scripts": {
-    "build": "esbuild src/app.js --bundle --minify --sourcemap --outfile=dist/app.min.js",
-    "build:dev": "esbuild src/app.js --bundle --sourcemap --outfile=dist/app.js",
-    "watch": "esbuild src/app.js --bundle --sourcemap --outfile=dist/app.js --watch"
+    "build": "esbuild src/app.js --bundle --minify --sourcemap --outfile=assets/js/app.min.js",
+    "dev": "esbuild src/app.js --bundle --sourcemap --outfile=assets/js/app.js --watch"
   },
+
   "devDependencies": {
     "esbuild": "^0.24.0"
   }

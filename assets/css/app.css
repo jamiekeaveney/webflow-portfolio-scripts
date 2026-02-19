@@ -1,0 +1,28 @@
+/* Lenis overrides */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+
+/* Your helpers */
+.single-line-wrap { overflow: hidden; display: block; }
+.single-line { display: block; will-change: transform; }
+.single-letter { display: inline-block; will-change: transform; }
+
+svg[viewBox] { overflow: visible !important; }
+
+.logo .logo-letter {
+  transition-delay: calc(0.02s * var(--i));
+}
