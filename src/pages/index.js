@@ -7,12 +7,15 @@ const pages = {
   home: { init: initHome, destroy: destroyHome },
   about: { init: initAbout, destroy: destroyAbout },
   approach: { init: initApproach, destroy: destroyApproach },
-  work: { init: initWork, destroy: destroyWork },
+  work: { init: initWork, destroy: destroyWork }
 };
 
 export function initPage(namespace, container, ctx) {
   const p = pages[namespace];
-  if (p && typeof p.init === "function") p.init(container, ctx);
+  if (p && typeof p.init === "function") {
+    return p.init(container, ctx); // IMPORTANT: return the promise
+  }
+  return Promise.resolve();
 }
 
 export function destroyPage(namespace) {
