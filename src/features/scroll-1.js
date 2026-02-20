@@ -1,3 +1,4 @@
+// src/features/scroll-1.js
 import { addCleanup } from "../core/cleanup.js";
 import { createST } from "../core/scrolltrigger.js";
 
@@ -7,29 +8,40 @@ export function initScroll1(container) {
 
   window.gsap.registerPlugin(window.ScrollTrigger);
 
-  container.querySelectorAll(".scroll-1_component").forEach((component) => {
+  const components = container.querySelectorAll(".scroll-1_component");
+  if (!components.length) return;
+
+  components.forEach((component) => {
     if (component.hasAttribute("data-scroll-1")) return;
     component.setAttribute("data-scroll-1", "");
 
-    const triggers = component.querySelectorAll(".scroll-1_trigger_item");
-    const targets  = component.querySelectorAll(".scroll-1_target_item");
+    const triggers = Array.from(component.querySelectorAll(".scroll-1_trigger_item"));
+    const targets  = Array.from(component.querySelectorAll(".scroll-1_target_item"));
+    if (!triggers.length || !targets.length) return;
 
     function makeActive(index) {
-      triggers.forEach((el, i) => el.classList.toggle("is-active", i === index));
-      targets.forEach((el, i) => el.classList.toggle("is-active", i === index));
+      for (let i = 0; i < triggers.length; i++) {
+        triggers[i].classList.toggle("is-active", i === index);
+      }
+      for (let i = 0; i < targets.length; i++) {
+        targets[i].classList.toggle("is-active", i === index);
+      }
     }
 
     makeActive(0);
 
-    triggers.forEach((el, i) => {
+    for (let i = 0; i < triggers.length; i++) {
       createST({
-        trigger: el,
+        trigger: triggers[i],
         start: "top center",
         end: "bottom center",
-        onToggle: (self) => { if (self.isActive) makeActive(i); }
+        onToggle: (self) => {
+          if (self.isActive) makeActive(i);
+        },
       });
-    });
+    }
 
+    // view-level cleanup
     addCleanup(() => {
       try { component.removeAttribute("data-scroll-1"); } catch (_) {}
     });
