@@ -1,4 +1,3 @@
-// src/app.js
 import { onReady } from "./core/ready.js";
 import { runCleanups } from "./core/cleanup.js";
 import { safeRefreshScrollTrigger } from "./core/scrolltrigger.js";
@@ -52,7 +51,7 @@ export function initContainer(container, ctx = {}) {
   initTextScroll(container);
   initRevealScroll(container);
 
-  // per-page hooks (THIS is where home-only stuff should run)
+  // per-page hooks
   initPage(ctx.namespace || "", container, ctx);
 
   safeRefreshScrollTrigger();
@@ -67,6 +66,6 @@ onReady(() => {
 
   // Boot Barba once
   initBarba({
-    initContainer,
+    initContainer
   });
 });
