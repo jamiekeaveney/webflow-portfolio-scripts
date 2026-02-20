@@ -24,7 +24,7 @@ function configureGSAPDefaults() {
  * Single init pipeline for every Barba container.
  * Anything created here should register cleanup via addCleanup() utilities in modules.
  */
-export function initContainer(container, ctx = {}) {
+export async function initContainer(container, ctx = {}) {
   container = container || document;
 
   // clean slate for this view
@@ -39,6 +39,9 @@ export function initContainer(container, ctx = {}) {
   // media + components
   initVideoAuto(container);
 
+  // Per-page hooks first (home.js can run loader here before load reveals)
+  await initPage(ctx.namespace || "", container, ctx);
+
   // load reveal (text/DOM-based)
   initRevealLoad(container, ctx);
 
@@ -49,9 +52,6 @@ export function initContainer(container, ctx = {}) {
   // scroll reveals
   initTextScroll(container);
   initRevealScroll(container);
-
-  // per-page hooks (home.js runs loader here)
-  initPage(ctx.namespace || "", container, ctx);
 
   safeRefreshScrollTrigger();
   startLenis();

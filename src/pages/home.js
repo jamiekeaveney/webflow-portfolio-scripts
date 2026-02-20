@@ -7,18 +7,17 @@ import { runLoader } from "../features/loader.js";
 export async function initHome(container, ctx) {
   if (!container) return;
 
-  // Start the counter reader first (it reads the CSS var)
+  // Counter must be active before progress starts
   initLoaderCounter(container);
 
-  // Run loader sequence on home only:
-  // show -> animate progress (1.5s) -> hide
+  // Run loader first (show -> 1.5s progress -> outro -> hide)
   await runLoader(1.5, container);
 
-  // Then continue with the rest of the home features
+  // Then the rest of the page features
   initScroll1(container);
   initLenisCentre(container);
 }
 
 export function destroyHome() {
-  // no-op: global runCleanups() handles it on Barba leave
+  // no-op: global cleanup handles this
 }
