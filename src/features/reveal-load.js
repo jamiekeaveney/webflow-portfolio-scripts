@@ -2,32 +2,106 @@ import { addCleanup } from "../core/cleanup.js";
 
 const staggerDefault = 0.075;
 
-export function initRevealLoad(container = document, ctx = {}) {
-  if (!window.gsap) return null;
+function shouldRunReveal(el, ctx = {}) {
+  const on = (el.getAttribute("data-reveal-on") || "both").toLowerCase();
+  if (on === "both") return true;
+  if (on === "first") return !!ctx.isFirstLoad;
+  if (on === "nav") return !!ctx.isNavigation;
+  return true;
+}
 
-  let items = Array.from(container.querySelectorAll('[data-reveal="load"]'));
-  if (!items.length) return null;
-
-  function shouldRun(el) {
-    const on = (el.getAttribute("data-reveal-on") || "both").toLowerCase();
-    if (on === "both") return true;
-    if (on === "first") return !!ctx.isFirstLoad;
-    if (on === "nav") return !!ctx.isNavigation;
-    return true;
-  }
-
-  items = items.filter(shouldRun);
-  if (!items.length) return null;
-
+function sortRevealItems(items) {
   items.sort((a, b) => {
     const ao = parseFloat(a.getAttribute("data-reveal-order"));
     const bo = parseFloat(b.getAttribute("data-reveal-order"));
-    const aHas = !Number.isNaN(ao), bHas = !Number.isNaN(bo);
+    const aHas = !Number.isNaN(ao);
+    const bHas = !Number.isNaN(bo);
+
     if (aHas && bHas) return ao - bo;
     if (aHas && !bHas) return -1;
     if (!aHas && bHas) return 1;
     return 0;
   });
+
+  return items;
+}
+
+function setRevealInitialState(el) {
+  const lines = el.querySelectorAll(".single-line");
+  const letters = el.querySelectorAll(".single-letter");
+
+  let yDefault = parseFloat(el.getAttribute("data-reveal-y"));
+  if (Number.isNaN(yDefault)) yDefault = (letters.length || lines.length) ? 120 : 20;
+
+  if (letters.length) {
+    window.gsap.set(letters, {
+      yPercent: yDefault,
+      autoAlpha: 0,
+      willChange: "transform, opacity"
+    });
+  } else if (lines.length) {
+    window.gsap.set(lines, {
+      yPercent: yDefault,
+      willChange: "transform"
+    });
+  } else {
+    window.gsap.set(el, {
+      y: yDefault,
+      autoAlpha: 0,
+      willChange: "transform, opacity"
+    });
+  }
+}
+
+function clearRevealWillChange(el) {
+  const lines = el.querySelectorAll(".single-line");
+  const letters = el.querySelectorAll(".single-letter");
+
+  if (letters.length) {
+    window.gsap.set(letters, { clearProps: "willChange" });
+  } else if (lines.length) {
+    window.gsap.set(lines, { clearProps: "willChange" });
+  } else {
+    window.gsap.set(el, { clearProps: "willChange" });
+  }
+}
+
+/**
+ * Prime reveal states only (no animation)
+ * Run BEFORE loader so elements are already hidden/off-position.
+ */
+export function primeRevealLoad(container = document, ctx = {}) {
+  if (!window.gsap) return null;
+
+  let items = Array.from(container.querySelectorAll('[data-reveal="load"]'));
+  if (!items.length) return null;
+
+  items = items.filter((el) => shouldRunReveal(el, ctx));
+  if (!items.length) return null;
+
+  items.forEach(setRevealInitialState);
+  return items;
+}
+
+/**
+ * Animate reveal-load items.
+ * If states were primed earlier, pass { skipPrime: true } to avoid reset pops.
+ */
+export function initRevealLoad(container = document, ctx = {}, opts = {}) {
+  if (!window.gsap) return null;
+
+  let items = Array.from(container.querySelectorAll('[data-reveal="load"]'));
+  if (!items.length) return null;
+
+  items = items.filter((el) => shouldRunReveal(el, ctx));
+  if (!items.length) return null;
+
+  sortRevealItems(items);
+
+  // Fallback behaviour if nothing primed earlier
+  if (!opts.skipPrime) {
+    items.forEach(setRevealInitialState);
+  }
 
   const baseDelay = ctx.isNavigation ? 0.15 : 0;
   const tl = window.gsap.timeline({ delay: baseDelay });
@@ -39,17 +113,10 @@ export function initRevealLoad(container = document, ctx = {}) {
     let dur = parseFloat(el.getAttribute("data-reveal-duration"));
     dur = Number.isNaN(dur) ? null : dur;
 
-    const ease = el.getAttribute("data-reveal-ease") || null;
+    const ease = el.getAttribute("data-reveal-ease") || "expo.out";
 
     const lines = el.querySelectorAll(".single-line");
     const letters = el.querySelectorAll(".single-letter");
-
-    let yDefault = parseFloat(el.getAttribute("data-reveal-y"));
-    if (Number.isNaN(yDefault)) yDefault = (letters.length || lines.length) ? 120 : 20;
-
-    if (letters.length) window.gsap.set(letters, { yPercent: yDefault, autoAlpha: 0 });
-    else if (lines.length) window.gsap.set(lines, { yPercent: yDefault });
-    else window.gsap.set(el, { y: yDefault, autoAlpha: 0 });
 
     const at = delay + (idx * staggerDefault);
 
@@ -62,8 +129,9 @@ export function initRevealLoad(container = document, ctx = {}) {
         autoAlpha: 1,
         stagger: ls,
         duration: dur || 0.75,
-        ease: ease || "expo.out",
-        overwrite: "auto"
+        ease,
+        overwrite: "auto",
+        onComplete: () => clearRevealWillChange(el)
       }, at);
 
     } else if (lines.length) {
@@ -74,8 +142,9 @@ export function initRevealLoad(container = document, ctx = {}) {
         yPercent: 0,
         stagger: lns,
         duration: dur || 0.95,
-        ease: ease || "expo.out",
-        overwrite: "auto"
+        ease,
+        overwrite: "auto",
+        onComplete: () => clearRevealWillChange(el)
       }, at);
 
     } else {
@@ -83,12 +152,16 @@ export function initRevealLoad(container = document, ctx = {}) {
         y: 0,
         autoAlpha: 1,
         duration: dur || 0.9,
-        ease: ease || "expo.out",
-        overwrite: "auto"
+        ease,
+        overwrite: "auto",
+        onComplete: () => clearRevealWillChange(el)
       }, at);
     }
   });
 
-  addCleanup(() => { try { tl.kill(); } catch (_) {} });
+  addCleanup(() => {
+    try { tl.kill(); } catch (_) {}
+  });
+
   return tl;
 }

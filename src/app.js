@@ -5,8 +5,8 @@ import { createLenis, startLenis } from "./core/lenis.js";
 
 import { initSplit } from "./features/split.js";
 import { initVideoAuto } from "./features/video-auto.js";
-import { initRevealLoad } from "./features/reveal-load.js";
-import { initVarsGrouped, initVarsLoad } from "./features/vars.js";
+import { initRevealLoad, primeRevealLoad } from "./features/reveal-load.js";
+import { initVarsGrouped, initVarsLoad, primeVarsLoad } from "./features/vars.js";
 import { initTextScroll, initRevealScroll } from "./features/reveal-scroll.js";
 
 import { initPage } from "./pages/index.js";
@@ -39,15 +39,19 @@ export async function initContainer(container, ctx = {}) {
   // media + components
   initVideoAuto(container);
 
+  // Compute grouped var delays before priming / animating
+  initVarsGrouped(container, ctx);
+
+  // PRIME initial states BEFORE loader so nothing flashes
+  primeRevealLoad(container, ctx);
+  primeVarsLoad(container, ctx, "load");
+
   // Per-page hooks first (home.js can run loader here before load reveals)
   await initPage(ctx.namespace || "", container, ctx);
 
-  // load reveal (text/DOM-based)
-  initRevealLoad(container, ctx);
-
-  // vars grouped -> vars load
-  initVarsGrouped(container, ctx);
-  initVarsLoad(container, ctx, "load");
+  // PLAY load animations AFTER loader
+  initRevealLoad(container, ctx, { skipPrime: true });
+  initVarsLoad(container, ctx, "load", { skipPrime: true });
 
   // scroll reveals
   initTextScroll(container);
