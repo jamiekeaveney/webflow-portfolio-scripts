@@ -13,9 +13,23 @@ function resetScrollTop() {
   window.scrollTo(0, 0);
 }
 
+/**
+ * Barba usually provides `data.next.namespace`, but in some edge cases
+ * it’s safer to fall back to the container attribute.
+ */
 function getNamespace(data, which = "next") {
   try {
-    return data && data[which] ? (data[which].namespace || "") : "";
+    const obj = data?.[which];
+    if (!obj) return "";
+
+    // Preferred: Barba-provided namespace
+    if (obj.namespace) return obj.namespace;
+
+    // Fallback: read from the container attribute
+    const c = obj.container;
+    if (c?.getAttribute) return c.getAttribute("data-barba-namespace") || "";
+
+    return "";
   } catch (_) {
     return "";
   }
