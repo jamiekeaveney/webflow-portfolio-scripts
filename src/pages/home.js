@@ -2,18 +2,21 @@
 import { initScroll1 } from "../features/scroll-1.js";
 import { initLenisCentre } from "../features/lenis-centre.js";
 import { initLoaderCounter } from "../features/loader-counter.js";
-import { runLoader } from "../features/loader.js";
+import { runLoader, loaderHide } from "../features/loader.js";
 
 export async function initHome(container, ctx) {
   if (!container) return;
 
-  // Counter must be active before progress starts
   initLoaderCounter(container);
 
-  // Run loader first (show -> 1.5s progress -> outro -> hide)
-  await runLoader(1.5, container);
+  // Loader only on first load / hard refresh
+  if (ctx && ctx.isFirstLoad) {
+    await runLoader(1.5, container);
+  } else {
+    // Make sure it's not left visible on nav transitions
+    await loaderHide();
+  }
 
-  // Then the rest of the page features
   initScroll1(container);
   initLenisCentre(container);
 }
