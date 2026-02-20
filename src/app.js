@@ -11,7 +11,6 @@ import { initTextScroll, initRevealScroll } from "./features/reveal-scroll.js";
 
 import { initPage } from "./pages/index.js";
 import { initBarba } from "./barba/index.js";
-import { loaderHide } from "./features/loader.js";
 
 const durationDefault = 0.8;
 
@@ -51,7 +50,7 @@ export function initContainer(container, ctx = {}) {
   initTextScroll(container);
   initRevealScroll(container);
 
-  // per-page hooks
+  // per-page hooks (home.js runs loader here)
   initPage(ctx.namespace || "", container, ctx);
 
   safeRefreshScrollTrigger();
@@ -60,9 +59,6 @@ export function initContainer(container, ctx = {}) {
 
 onReady(() => {
   configureGSAPDefaults();
-
-  // If you have a loader, hide it on initial ready (safe no-op if missing)
-  loaderHide();
 
   // Boot Barba once
   initBarba({

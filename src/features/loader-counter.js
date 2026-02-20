@@ -1,4 +1,3 @@
-// src/features/loader-counter.js
 import { addCleanup } from "../core/cleanup.js";
 
 /**
@@ -6,13 +5,15 @@ import { addCleanup } from "../core/cleanup.js";
  * Reads CSS var --_feedback---number-counter (0..1) and renders 00..100 into .counter.
  *
  * Expected markup:
- * - [data-loader] wrapper (optional; falls back to container / documentElement)
+ * - [data-loader] wrapper (optional; falls back to [data-loader="wrap"] / documentElement)
  * - .counter inside it
  */
 export function initLoaderCounter(container = document) {
   const root =
     (container && container.querySelector && container.querySelector("[data-loader]")) ||
+    (container && container.querySelector && container.querySelector('[data-loader="wrap"]')) ||
     document.querySelector("[data-loader]") ||
+    document.querySelector('[data-loader="wrap"]') ||
     document.documentElement;
 
   const counter = root && root.querySelector ? root.querySelector(".counter") : null;
