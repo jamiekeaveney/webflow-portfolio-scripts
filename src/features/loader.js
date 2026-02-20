@@ -9,7 +9,9 @@ function getLoaderEls() {
     heroHeading: wrap.querySelector('[data-loader-hero="heading"]'),
     heroLetters: wrap.querySelectorAll(".loader-hero-letter"),
     counterWrap: wrap.querySelector(".loader-counter-wrap"),
-    progressTrack: wrap.querySelector(".loader-progress-track")
+    progressTrack: wrap.querySelector(".loader-progress-track"),
+    planeWhite: wrap.querySelector(".loader-plane-white"),
+    planeGrey: wrap.querySelector(".loader-plane-grey")
   };
 }
 
@@ -25,12 +27,9 @@ function getLoaderRoot(container) {
 
 const EASE = "expo.out";
 const EASE_IN_OUT = "expo.inOut";
-const LINE_BASE_HEIGHT = "0.2rem";
-
-// Match your site motion language
-const LETTER_STAGGER = 0.09;   // same flavour as your hero split
-const TRANSFORM_DUR = 1.0;     // 1000ms like your site
-const FADE_DUR = 0.5;          // only used if ever needed
+const LINE_HEIGHT = "0.25rem";
+const LETTER_STAGGER = 0.09;
+const TRANSFORM_DUR = 1.0; // 1000ms (your standard)
 
 export function loaderShow() {
   const els = getLoaderEls();
@@ -43,7 +42,15 @@ export function loaderShow() {
     return Promise.resolve();
   }
 
-  els.wrap.classList.remove("is-wipe-phase");
+  window.gsap.killTweensOf([
+    els.wrap,
+    els.bg,
+    els.counterWrap,
+    els.progressTrack,
+    els.planeWhite,
+    els.planeGrey,
+    ...(els.heroLetters ? Array.from(els.heroLetters) : [])
+  ]);
 
   window.gsap.set(els.wrap, {
     display: "block",
@@ -53,7 +60,15 @@ export function loaderShow() {
   });
 
   if (els.progressTrack) {
-    window.gsap.set(els.progressTrack, { height: LINE_BASE_HEIGHT });
+    window.gsap.set(els.progressTrack, { height: LINE_HEIGHT });
+  }
+
+  if (els.planeWhite) {
+    window.gsap.set(els.planeWhite, { height: "0%" });
+  }
+
+  if (els.planeGrey) {
+    window.gsap.set(els.planeGrey, { height: "0%" });
   }
 
   if (els.counterWrap) {
@@ -61,12 +76,9 @@ export function loaderShow() {
   }
 
   if (els.heroLetters && els.heroLetters.length) {
-    // Start letters below, same upward reveal language as your split text
-    window.gsap.set(els.heroLetters, {
-      yPercent: 120
-    });
+    // Split-text style entrance from below
+    window.gsap.set(els.heroLetters, { yPercent: 120 });
 
-    // Animate loader hero letters in immediately
     window.gsap.to(els.heroLetters, {
       yPercent: 0,
       duration: TRANSFORM_DUR,
@@ -83,33 +95,30 @@ export function loaderHide() {
   const els = getLoaderEls();
   if (!els) return Promise.resolve();
 
-  if (window.gsap) {
-    els.wrap.classList.remove("is-wipe-phase");
-
-    window.gsap.set(els.wrap, {
-      display: "none",
-      pointerEvents: "none",
-      autoAlpha: 0,
-      clipPath: "inset(0% 0% 0% 0%)"
-    });
-
-    if (els.heroLetters && els.heroLetters.length) {
-      window.gsap.set(els.heroLetters, { clearProps: "transform" });
-    }
-    if (els.counterWrap) window.gsap.set(els.counterWrap, { clearProps: "transform" });
-    if (els.progressTrack) window.gsap.set(els.progressTrack, { clearProps: "height" });
-  } else {
+  if (!window.gsap) {
     els.wrap.style.display = "none";
     els.wrap.style.pointerEvents = "none";
+    return Promise.resolve();
+  }
+
+  window.gsap.set(els.wrap, {
+    display: "none",
+    pointerEvents: "none",
+    autoAlpha: 0,
+    clipPath: "inset(0% 0% 0% 0%)"
+  });
+
+  if (els.progressTrack) window.gsap.set(els.progressTrack, { height: LINE_HEIGHT });
+  if (els.planeWhite) window.gsap.set(els.planeWhite, { height: "0%" });
+  if (els.planeGrey) window.gsap.set(els.planeGrey, { height: "0%" });
+  if (els.counterWrap) window.gsap.set(els.counterWrap, { yPercent: 0 });
+  if (els.heroLetters && els.heroLetters.length) {
+    window.gsap.set(els.heroLetters, { clearProps: "transform" });
   }
 
   return Promise.resolve();
 }
 
-/**
- * Progress variable driver
- * Keeps your counter + bar tied to one CSS variable
- */
 export function loaderProgressTo(duration = 1.5, container = document) {
   const root = getLoaderRoot(container);
   if (!root) return Promise.resolve();
@@ -124,7 +133,7 @@ export function loaderProgressTo(duration = 1.5, container = document) {
   const state = { value: 0 };
   const tl = window.gsap.timeline();
 
-  // Editorial progression curve (same flavour as expo)
+  // Nice editorial curve (same flavour as expo)
   tl.to(state, {
     value: 0.72,
     duration: duration * 0.52,
@@ -158,21 +167,13 @@ export function loaderProgressTo(duration = 1.5, container = document) {
   return tl.then(() => {});
 }
 
-/**
- * Outro:
- * - Counter slides up and clips out
- * - Giant "Jamie" letters slide up and clip out (same motion language)
- * - Progress line expands into white plane
- * - Blend mode flips text while wipe is happening
- * - Loader clips away upward
- */
 export function loaderOutro() {
   const els = getLoaderEls();
   if (!els || !window.gsap) return Promise.resolve();
 
   const tl = window.gsap.timeline();
 
-  // Counter exits upward (clipped)
+  // Counter slides up and clips (no fade)
   if (els.counterWrap) {
     tl.to(els.counterWrap, {
       yPercent: -100,
@@ -181,7 +182,7 @@ export function loaderOutro() {
     }, 0);
   }
 
-  // Hero letters exit upward, staggered (clipped)
+  // Hero letters slide up and clip (same motion language as your split text)
   if (els.heroLetters && els.heroLetters.length) {
     tl.to(els.heroLetters, {
       yPercent: -100,
@@ -194,26 +195,39 @@ export function loaderOutro() {
     }, 0.04);
   }
 
-  // Enter wipe phase so giant text inverts on white
-  tl.call(() => {
-    els.wrap.classList.add("is-wipe-phase");
-  }, [], 0.14);
-
-  // White line becomes full-screen white plane
-  if (els.progressTrack) {
-    tl.to(els.progressTrack, {
-      height: "100vh",
+  // White plane rises first
+  if (els.planeWhite) {
+    tl.to(els.planeWhite, {
+      height: "100%",
       duration: 1.0,
       ease: EASE_IN_OUT
     }, 0.16);
   }
 
-  // Then clip the black loader away upward
+  // Grey plane follows, also rising (slightly delayed)
+  if (els.planeGrey) {
+    tl.to(els.planeGrey, {
+      height: "100%",
+      duration: 1.0,
+      ease: EASE_IN_OUT
+    }, 0.42);
+  }
+
+  // Optional: hide bottom progress track once wipe has clearly started
+  if (els.progressTrack) {
+    tl.to(els.progressTrack, {
+      autoAlpha: 0,
+      duration: 0.25,
+      ease: "none"
+    }, 0.35);
+  }
+
+  // Final loader clip upward (reveals real page beneath)
   tl.to(els.wrap, {
     clipPath: "inset(0% 0% 100% 0%)",
     duration: 0.8,
     ease: EASE_IN_OUT
-  }, 0.84);
+  }, 1.08);
 
   return tl.then(() => {});
 }
