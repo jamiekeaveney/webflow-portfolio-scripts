@@ -1,3 +1,4 @@
+// src/app.js
 import { onReady } from "./core/ready.js";
 import { runCleanups } from "./core/cleanup.js";
 import { safeRefreshScrollTrigger } from "./core/scrolltrigger.js";
@@ -5,7 +6,6 @@ import { createLenis, startLenis } from "./core/lenis.js";
 
 import { initSplit } from "./features/split.js";
 import { initVideoAuto } from "./features/video-auto.js";
-import { initScroll1 } from "./features/scroll-1.js";
 import { initRevealLoad } from "./features/reveal-load.js";
 import { initVarsGrouped, initVarsLoad } from "./features/vars.js";
 import { initTextScroll, initRevealScroll } from "./features/reveal-scroll.js";
@@ -40,7 +40,6 @@ export function initContainer(container, ctx = {}) {
 
   // media + components
   initVideoAuto(container);
-  initScroll1(container);
 
   // load reveal (text/DOM-based)
   initRevealLoad(container, ctx);
@@ -53,7 +52,7 @@ export function initContainer(container, ctx = {}) {
   initTextScroll(container);
   initRevealScroll(container);
 
-  // per-page hooks
+  // per-page hooks (THIS is where home-only stuff should run)
   initPage(ctx.namespace || "", container, ctx);
 
   safeRefreshScrollTrigger();
