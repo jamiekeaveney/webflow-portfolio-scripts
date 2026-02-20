@@ -4,8 +4,6 @@ function getLoaderEls() {
 
   return {
     wrap,
-    bg: wrap.querySelector('[data-loader="bg"]') || wrap,
-    content: wrap.querySelector('[data-loader="content"]') || null,
     nameShell: wrap.querySelector(".loader-name-shell"),
     counterWrap: wrap.querySelector(".loader-counter-wrap"),
     progressTrack: wrap.querySelector(".loader-progress-track")
@@ -22,10 +20,9 @@ function getLoaderRoot(container) {
   );
 }
 
-/**
- * Header CSS handles initial visible state.
- * This just ensures a consistent runtime state.
- */
+const EASE = "expo.out";
+const EASE_IN_OUT = "expo.inOut";
+
 export function loaderShow() {
   const els = getLoaderEls();
   if (!els) return Promise.resolve();
@@ -38,17 +35,9 @@ export function loaderShow() {
       clipPath: "inset(0% 0% 0% 0%)"
     });
 
-    if (els.progressTrack) {
-      window.gsap.set(els.progressTrack, { height: "0.12rem" });
-    }
-
-    if (els.nameShell) {
-      window.gsap.set(els.nameShell, { yPercent: 0, autoAlpha: 1 });
-    }
-
-    if (els.counterWrap) {
-      window.gsap.set(els.counterWrap, { y: 0, autoAlpha: 1 });
-    }
+    if (els.progressTrack) window.gsap.set(els.progressTrack, { height: "0.2rem" });
+    if (els.nameShell) window.gsap.set(els.nameShell, { yPercent: 0, autoAlpha: 1 });
+    if (els.counterWrap) window.gsap.set(els.counterWrap, { y: 0, autoAlpha: 1 });
   } else {
     els.wrap.style.display = "block";
     els.wrap.style.pointerEvents = "auto";
@@ -58,9 +47,6 @@ export function loaderShow() {
   return Promise.resolve();
 }
 
-/**
- * Just turns it off after wipe finishes
- */
 export function loaderHide() {
   const els = getLoaderEls();
   if (!els) return Promise.resolve();
@@ -80,12 +66,6 @@ export function loaderHide() {
   return Promise.resolve();
 }
 
-/**
- * Drives:
- * - name reveal fill width
- * - bottom progress line width
- * - .counter via loader-counter.js
- */
 export function loaderProgressTo(duration = 1.5, container = document) {
   const root = getLoaderRoot(container);
   if (!root) return Promise.resolve();
@@ -102,7 +82,7 @@ export function loaderProgressTo(duration = 1.5, container = document) {
   return window.gsap.to(state, {
     value: 1,
     duration,
-    ease: "expo.out",
+    ease: EASE,
     onUpdate: () => {
       root.style.setProperty("--_feedback---number-counter", String(state.value));
     }
@@ -111,25 +91,20 @@ export function loaderProgressTo(duration = 1.5, container = document) {
   });
 }
 
-/**
- * Outro:
- * 1) name slides up + fades
- * 2) counter fades
- * 3) bottom white line expands to full screen
- * 4) whole loader clips upward to reveal page (no abrupt toggle)
- */
 export function loaderOutro() {
   const els = getLoaderEls();
   if (!els || !window.gsap) return Promise.resolve();
 
   const tl = window.gsap.timeline();
 
+  // Fade timings: 250ms / 500ms
+  // Transform timings: ~0.75s to 1s
   if (els.nameShell) {
     tl.to(els.nameShell, {
-      yPercent: -14,
+      yPercent: -12,
       autoAlpha: 0,
-      duration: 0.35,
-      ease: "expo.inOut"
+      duration: 0.75,
+      ease: EASE
     }, 0);
   }
 
@@ -137,25 +112,25 @@ export function loaderOutro() {
     tl.to(els.counterWrap, {
       autoAlpha: 0,
       y: "-0.4rem",
-      duration: 0.25,
-      ease: "expo.out"
+      duration: 0.5,
+      ease: EASE
     }, 0);
   }
 
   if (els.progressTrack) {
     tl.to(els.progressTrack, {
       height: "100vh",
-      duration: 0.5,
-      ease: "expo.inOut"
-    }, 0.06);
+      duration: 1.0,
+      ease: EASE_IN_OUT
+    }, 0.12);
   }
 
-  // Hold the white fullscreen for a beat, then wipe it up
+  // Wipe loader away (so it doesn't just disappear)
   tl.to(els.wrap, {
     clipPath: "inset(0% 0% 100% 0%)",
-    duration: 0.6,
-    ease: "expo.inOut"
-  }, 0.42);
+    duration: 0.75,
+    ease: EASE_IN_OUT
+  }, 0.65);
 
   return tl.then(() => {});
 }
