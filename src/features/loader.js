@@ -6,7 +6,6 @@ function getLoaderEls() {
     wrap,
     bg: wrap.querySelector('[data-loader="bg"]') || wrap,
     content: wrap.querySelector('[data-loader="content"]') || null,
-    heroHeading: wrap.querySelector('[data-loader-hero="heading"]'),
     heroLetters: wrap.querySelectorAll(".loader-hero-letter"),
     counterWrap: wrap.querySelector(".loader-counter-wrap"),
     progressTrack: wrap.querySelector(".loader-progress-track"),
@@ -28,8 +27,8 @@ function getLoaderRoot(container) {
 const EASE = "expo.out";
 const EASE_IN_OUT = "expo.inOut";
 const LINE_HEIGHT = "0.25rem";
-const LETTER_STAGGER = 0.09;
-const TRANSFORM_DUR = 1.0; // 1000ms (your standard)
+const LETTER_STAGGER_IN = 0.09;
+const TRANSFORM_DUR = 1.0;
 
 export function loaderShow() {
   const els = getLoaderEls();
@@ -44,7 +43,6 @@ export function loaderShow() {
 
   window.gsap.killTweensOf([
     els.wrap,
-    els.bg,
     els.counterWrap,
     els.progressTrack,
     els.planeWhite,
@@ -60,30 +58,25 @@ export function loaderShow() {
   });
 
   if (els.progressTrack) {
-    window.gsap.set(els.progressTrack, { height: LINE_HEIGHT });
+    window.gsap.set(els.progressTrack, {
+      height: LINE_HEIGHT,
+      autoAlpha: 1
+    });
   }
 
-  if (els.planeWhite) {
-    window.gsap.set(els.planeWhite, { height: "0%" });
-  }
+  if (els.planeWhite) window.gsap.set(els.planeWhite, { height: "0%" });
+  if (els.planeGrey) window.gsap.set(els.planeGrey, { height: "0%" });
 
-  if (els.planeGrey) {
-    window.gsap.set(els.planeGrey, { height: "0%" });
-  }
-
-  if (els.counterWrap) {
-    window.gsap.set(els.counterWrap, { yPercent: 0 });
-  }
+  if (els.counterWrap) window.gsap.set(els.counterWrap, { yPercent: 0 });
 
   if (els.heroLetters && els.heroLetters.length) {
-    // Split-text style entrance from below
     window.gsap.set(els.heroLetters, { yPercent: 120 });
 
     window.gsap.to(els.heroLetters, {
       yPercent: 0,
       duration: TRANSFORM_DUR,
       ease: EASE,
-      stagger: LETTER_STAGGER,
+      stagger: LETTER_STAGGER_IN,
       overwrite: "auto"
     });
   }
@@ -108,10 +101,18 @@ export function loaderHide() {
     clipPath: "inset(0% 0% 0% 0%)"
   });
 
-  if (els.progressTrack) window.gsap.set(els.progressTrack, { height: LINE_HEIGHT });
+  if (els.progressTrack) {
+    window.gsap.set(els.progressTrack, {
+      height: LINE_HEIGHT,
+      autoAlpha: 1
+    });
+  }
+
   if (els.planeWhite) window.gsap.set(els.planeWhite, { height: "0%" });
   if (els.planeGrey) window.gsap.set(els.planeGrey, { height: "0%" });
+
   if (els.counterWrap) window.gsap.set(els.counterWrap, { yPercent: 0 });
+
   if (els.heroLetters && els.heroLetters.length) {
     window.gsap.set(els.heroLetters, { clearProps: "transform" });
   }
@@ -133,7 +134,7 @@ export function loaderProgressTo(duration = 1.5, container = document) {
   const state = { value: 0 };
   const tl = window.gsap.timeline();
 
-  // Nice editorial curve (same flavour as expo)
+  // Smooth branded progress curve
   tl.to(state, {
     value: 0.72,
     duration: duration * 0.52,
@@ -173,59 +174,48 @@ export function loaderOutro() {
 
   const tl = window.gsap.timeline();
 
-  // Counter slides up and clips (no fade)
+  // Counter can slide away (hero should NOT)
   if (els.counterWrap) {
     tl.to(els.counterWrap, {
       yPercent: -100,
-      duration: TRANSFORM_DUR,
+      duration: 1.0,
       ease: EASE
-    }, 0);
+    }, 0.06);
   }
 
-  // Hero letters slide up and clip (same motion language as your split text)
-  if (els.heroLetters && els.heroLetters.length) {
-    tl.to(els.heroLetters, {
-      yPercent: -100,
-      duration: TRANSFORM_DUR,
-      ease: EASE,
-      stagger: {
-        each: 0.05,
-        from: "start"
-      }
-    }, 0.04);
-  }
-
-  // White plane rises first
+  // White wipe gets full-screen moment
   if (els.planeWhite) {
     tl.to(els.planeWhite, {
       height: "100%",
       duration: 1.0,
       ease: EASE_IN_OUT
-    }, 0.16);
+    }, 0.12);
   }
 
-  // Grey plane follows, also rising (slightly delayed)
-  if (els.planeGrey) {
-    tl.to(els.planeGrey, {
-      height: "100%",
-      duration: 1.0,
-      ease: EASE_IN_OUT
-    }, 0.42);
-  }
-
-  // Optional: hide bottom progress track once wipe has clearly started
+  // Fade progress track once wipe is underway
   if (els.progressTrack) {
     tl.to(els.progressTrack, {
       autoAlpha: 0,
       duration: 0.25,
       ease: "none"
-    }, 0.35);
+    }, 0.42);
   }
 
-  // Final loader clip upward (reveals real page beneath)
+  // Grey wipe rises AFTER white and only partially.
+  // Because grey is above the hero, it visually "cuts off" the Jamie text.
+  if (els.planeGrey) {
+    tl.to(els.planeGrey, {
+      height: "42vh",
+      duration: 0.58,
+      ease: EASE_IN_OUT
+    }, 0.78);
+  }
+
+  // Clip the whole loader away before grey overstays.
+  // This gives white the main visual moment, with grey just being the cutter.
   tl.to(els.wrap, {
     clipPath: "inset(0% 0% 100% 0%)",
-    duration: 0.8,
+    duration: 0.72,
     ease: EASE_IN_OUT
   }, 1.08);
 
