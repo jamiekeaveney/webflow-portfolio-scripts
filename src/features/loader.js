@@ -205,7 +205,7 @@ export function loaderOutro() {
   // Because grey is above the hero, it visually "cuts off" the Jamie text.
   if (els.planeGrey) {
     tl.to(els.planeGrey, {
-      height: "42vh",
+      height: "100vh",
       duration: 0.58,
       ease: EASE_IN_OUT
     }, 0.78);
