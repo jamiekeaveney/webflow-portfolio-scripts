@@ -84,7 +84,7 @@ export function initBarba({ initContainer }) {
           const container = data?.next?.container || document;
           const ns = getNamespace(data, "next");
 
-          // IMPORTANT: await async initContainer so home loader finishes before load-reveals run
+          // IMPORTANT: await this (home loader runs here on first load)
           await initContainer(container, {
             isFirstLoad: true,
             isNavigation: false,
@@ -93,7 +93,7 @@ export function initBarba({ initContainer }) {
         },
 
         async leave(data) {
-          // Your normal page transition only (no loader here)
+          // Normal Barba fade only (no loader here)
           if (window.gsap) {
             await window.gsap.to(data.current.container, {
               autoAlpha: 0,
@@ -121,7 +121,7 @@ export function initBarba({ initContainer }) {
           const container = data?.next?.container || document;
           const ns = getNamespace(data, "next");
 
-          // IMPORTANT: await async initContainer here too
+          // IMPORTANT: await this too
           await initContainer(container, {
             isFirstLoad: false,
             isNavigation: true,

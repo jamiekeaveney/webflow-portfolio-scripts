@@ -124,18 +124,3 @@ svg[viewBox] {
   transition-delay: calc(0.02s * var(--i));
 }
 
-  [data-loader="wrap"] {
-    position: fixed;
-    inset: 0;
-    z-index: 999999;
-    display: block;
-    pointer-events: auto;
-  }
-
-  [data-loader="bg"] {
-    position: absolute;
-    inset: 0;
-    background: var(--_theme---swatches--black, #000);
-    opacity: 1;
-    visibility: visible;
-  }
