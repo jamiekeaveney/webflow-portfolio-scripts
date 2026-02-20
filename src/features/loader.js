@@ -22,10 +22,7 @@ function getLoaderRoot(container) {
 
 const EASE = "expo.out";
 const EASE_IN_OUT = "expo.inOut";
-
-// Branded timing defaults
 const LINE_BASE_HEIGHT = "0.2rem";
-const LINE_PULSE_HEIGHT = "0.28rem";
 
 export function loaderShow() {
   const els = getLoaderEls();
@@ -77,7 +74,6 @@ export function loaderHide() {
   if (!els) return Promise.resolve();
 
   if (window.gsap) {
-    // Clear performance hints too
     if (els.nameShell) window.gsap.set(els.nameShell, { clearProps: "willChange" });
     if (els.counterWrap) window.gsap.set(els.counterWrap, { clearProps: "willChange" });
     if (els.progressTrack) window.gsap.set(els.progressTrack, { clearProps: "willChange" });
@@ -98,13 +94,12 @@ export function loaderHide() {
 }
 
 /**
- * Main progress driver
- * Keeps your single CSS variable as the source of truth.
+ * Progress curve:
+ * - quick confidence at the start
+ * - controlled slow-down near the end
+ * - final short push to 100
  *
- * Enhanced feel:
- * - Progress curve is shaped (fast start, slight settle, confident finish)
- * - Subtle micro-motion on name/counter during load
- * - Tiny line pulse near the end for polish
+ * No pulses / gimmicks — just better pacing.
  */
 export function loaderProgressTo(duration = 1.5, container = document) {
   const root = getLoaderRoot(container);
@@ -121,38 +116,30 @@ export function loaderProgressTo(duration = 1.5, container = document) {
   const state = { value: 0 };
   const tl = window.gsap.timeline();
 
-  // Subtle micro-motion so the loader doesn't feel static
+  // subtle drift while loading (keeps it alive, very restrained)
   if (els?.nameShell) {
-    tl.to(
-      els.nameShell,
-      {
-        yPercent: -1.4,
-        duration: duration,
-        ease: "none"
-      },
-      0
-    );
+    tl.to(els.nameShell, {
+      yPercent: -1.2,
+      duration,
+      ease: "none"
+    }, 0);
   }
 
   if (els?.counterWrap) {
-    tl.to(
-      els.counterWrap,
-      {
-        y: "-0.12rem",
-        duration: duration,
-        ease: "none"
-      },
-      0
-    );
+    tl.to(els.counterWrap, {
+      y: "-0.1rem",
+      duration,
+      ease: "none"
+    }, 0);
   }
 
-  // Progress shape:
-  // 0 -> 0.84 (fast)
-  // 0.84 -> 0.96 (slight settle)
-  // 0.96 -> 1.00 (final push)
+  // Nice editorial-style progression:
+  // 0 -> 0.78 (fast)
+  // 0.78 -> 0.94 (gentle decel)
+  // 0.94 -> 1.00 (decisive finish)
   tl.to(state, {
-    value: 0.84,
-    duration: duration * 0.68,
+    value: 0.78,
+    duration: duration * 0.58,
     ease: EASE,
     onUpdate: () => {
       root.style.setProperty("--_feedback---number-counter", String(state.value));
@@ -160,40 +147,17 @@ export function loaderProgressTo(duration = 1.5, container = document) {
   }, 0);
 
   tl.to(state, {
-    value: 0.96,
-    duration: duration * 0.20,
+    value: 0.94,
+    duration: duration * 0.24,
     ease: "power2.out",
     onUpdate: () => {
       root.style.setProperty("--_feedback---number-counter", String(state.value));
     }
   });
 
-  // Small premium "pulse" before completion
-  if (els?.progressTrack) {
-    tl.to(
-      els.progressTrack,
-      {
-        height: LINE_PULSE_HEIGHT,
-        duration: 0.32,
-        ease: EASE
-      },
-      duration * 0.78
-    );
-
-    tl.to(
-      els.progressTrack,
-      {
-        height: LINE_BASE_HEIGHT,
-        duration: 0.32,
-        ease: EASE
-      },
-      duration * 0.98
-    );
-  }
-
   tl.to(state, {
     value: 1,
-    duration: duration * 0.12,
+    duration: duration * 0.18,
     ease: EASE_IN_OUT,
     onUpdate: () => {
       root.style.setProperty("--_feedback---number-counter", String(state.value));
@@ -207,10 +171,10 @@ export function loaderProgressTo(duration = 1.5, container = document) {
 }
 
 /**
- * Premium outro:
- * 1) Name and counter clear out cleanly
- * 2) Progress line thickens and becomes the full-screen white wipe
- * 3) Black loader plane clips upward to reveal page (no abrupt hide)
+ * Outro:
+ * - type leaves first
+ * - progress line becomes the white plane
+ * - black loader clips away
  */
 export function loaderOutro() {
   const els = getLoaderEls();
@@ -218,10 +182,9 @@ export function loaderOutro() {
 
   const tl = window.gsap.timeline();
 
-  // Clear text first (slightly staggered, same easing family)
   if (els.nameShell) {
     tl.to(els.nameShell, {
-      yPercent: -12,
+      yPercent: -14,
       autoAlpha: 0,
       duration: 0.75,
       ease: EASE
@@ -231,28 +194,25 @@ export function loaderOutro() {
   if (els.counterWrap) {
     tl.to(els.counterWrap, {
       autoAlpha: 0,
-      y: "-0.45rem",
+      y: "-0.4rem",
       duration: 0.5,
       ease: EASE
-    }, 0.04);
+    }, 0.06);
   }
 
-  // Let the line become the visual wipe
   if (els.progressTrack) {
     tl.to(els.progressTrack, {
       height: "100vh",
       duration: 1.0,
       ease: EASE_IN_OUT
-    }, 0.16);
+    }, 0.18);
   }
 
-  // Hold the white screen just a touch, then clip the loader away
-  // This makes the transition feel intentional, not like a toggle.
   tl.to(els.wrap, {
     clipPath: "inset(0% 0% 100% 0%)",
-    duration: 0.85,
+    duration: 0.8,
     ease: EASE_IN_OUT
-  }, 0.78);
+  }, 0.82);
 
   return tl.then(() => {});
 }
