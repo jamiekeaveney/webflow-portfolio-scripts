@@ -14,7 +14,7 @@ export async function initHome(container, ctx) {
     if (started) return;
     started = true;
 
-    // Start global/page load reveals early (owned by app.js)
+    // Start global/page load reveals early (from app.js)
     if (ctx && typeof ctx.startLoadReveals === "function") {
       ctx.startLoadReveals();
     }

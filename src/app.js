@@ -39,14 +39,14 @@ export async function initContainer(container, ctx = {}) {
   // media + components
   initVideoAuto(container);
 
-  // Compute grouped var delays before priming / animating
+  // Group delays first (vars)
   initVarsGrouped(container, ctx);
 
-  // PRIME initial states BEFORE loader so nothing flashes
+  // Prime reveal/var states BEFORE loader so nothing flashes
   primeRevealLoad(container, ctx);
   primeVarsLoad(container, ctx, "load");
 
-  // Create one guarded starter so load animations can begin early (during loader)
+  // One guarded starter for load reveals (can be called early by home.js)
   let loadRevealsStarted = false;
   const startLoadReveals = () => {
     if (loadRevealsStarted) return;
@@ -56,13 +56,13 @@ export async function initContainer(container, ctx = {}) {
     initVarsLoad(container, ctx, "load", { skipPrime: true });
   };
 
-  // Expose to page-level scripts (home.js can call this from loader onRevealStart)
+  // Expose to page-level hooks
   ctx.startLoadReveals = startLoadReveals;
 
-  // Per-page hooks first (home.js may run loader and call ctx.startLoadReveals() early)
+  // Per-page hooks first (home.js can run loader and trigger startLoadReveals early)
   await initPage(ctx.namespace || "", container, ctx);
 
-  // Fallback: if page didn't start them early, start them now
+  // Fallback (non-home pages / if not started early)
   startLoadReveals();
 
   // scroll reveals
