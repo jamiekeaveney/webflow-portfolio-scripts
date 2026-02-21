@@ -149,9 +149,10 @@ export function loaderProgressTo(duration = 1.5, container = document) {
   const state = { value: 0 };
   const tl = window.gsap.timeline();
 
+  // 2-step progress curve (expo family only)
   tl.to(state, {
-    value: 0.72,
-    duration: duration * 0.52,
+    value: 0.84,
+    duration: duration * 0.68,
     ease: EASE,
     onUpdate: () => {
       root.style.setProperty("--_feedback---number-counter", String(state.value));
@@ -159,17 +160,8 @@ export function loaderProgressTo(duration = 1.5, container = document) {
   });
 
   tl.to(state, {
-    value: 0.92,
-    duration: duration * 0.28,
-    ease: "power2.out",
-    onUpdate: () => {
-      root.style.setProperty("--_feedback---number-counter", String(state.value));
-    }
-  });
-
-  tl.to(state, {
     value: 1,
-    duration: duration * 0.20,
+    duration: duration * 0.32,
     ease: EASE_IN_OUT,
     onUpdate: () => {
       root.style.setProperty("--_feedback---number-counter", String(state.value));
@@ -182,11 +174,23 @@ export function loaderProgressTo(duration = 1.5, container = document) {
   return tl.then(() => {});
 }
 
-export function loaderOutro() {
+/**
+ * Loader outro with optional overlap callback.
+ * onRevealStart fires while the loader is still covering the page,
+ * so your homepage reveal can start underneath.
+ */
+export function loaderOutro({ onRevealStart } = {}) {
   const els = getLoaderEls();
   if (!els || !window.gsap) return Promise.resolve();
 
   const tl = window.gsap.timeline();
+  let revealStarted = false;
+
+  const fireRevealStart = () => {
+    if (revealStarted) return;
+    revealStarted = true;
+    if (typeof onRevealStart === "function") onRevealStart();
+  };
 
   if (els.counterWrap) {
     tl.to(els.counterWrap, {
@@ -223,21 +227,24 @@ export function loaderOutro() {
     }, 0.45);
   }
 
+  // Start the homepage reveal earlier, while the loader is still on top
+  tl.call(fireRevealStart, [], 0.55);
+
   // Clip the whole stage before white fully tops out
   if (els.stage) {
     tl.to(els.stage, {
       clipPath: "inset(0% 0% 100% 0%)",
       duration: 0.9,
       ease: EASE_IN_OUT
-    }, 0.45);
+    }, 0.52);
   }
 
   return tl.then(() => {});
 }
 
-export async function runLoader(duration = 1.5, container = document) {
+export async function runLoader(duration = 1.5, container = document, opts = {}) {
   await loaderShow();
   await loaderProgressTo(duration, container);
-  await loaderOutro();
+  await loaderOutro(opts);
   await loaderHide();
 }

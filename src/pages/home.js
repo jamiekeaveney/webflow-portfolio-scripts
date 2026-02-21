@@ -9,14 +9,23 @@ export async function initHome(container, ctx) {
 
   initLoaderCounter(container);
 
+  let started = false;
+  const startHomeSystems = () => {
+    if (started) return;
+    started = true;
+
+    initScroll1(container);
+    initLenisCentre(container);
+  };
+
   if (ctx && ctx.isFirstLoad) {
-    await runLoader(1.5, container);
+    await runLoader(1.5, container, {
+      onRevealStart: startHomeSystems
+    });
   } else {
     await loaderHide();
+    startHomeSystems();
   }
-
-  initScroll1(container);
-  initLenisCentre(container);
 
   return Promise.resolve();
 }
