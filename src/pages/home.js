@@ -14,6 +14,12 @@ export async function initHome(container, ctx) {
     if (started) return;
     started = true;
 
+    // Start global/page load reveals early (owned by app.js)
+    if (ctx && typeof ctx.startLoadReveals === "function") {
+      ctx.startLoadReveals();
+    }
+
+    // Start home-specific systems
     initScroll1(container);
     initLenisCentre(container);
   };

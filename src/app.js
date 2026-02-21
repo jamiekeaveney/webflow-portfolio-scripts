@@ -46,12 +46,24 @@ export async function initContainer(container, ctx = {}) {
   primeRevealLoad(container, ctx);
   primeVarsLoad(container, ctx, "load");
 
-  // Per-page hooks first (home.js can run loader here before load reveals)
+  // Create one guarded starter so load animations can begin early (during loader)
+  let loadRevealsStarted = false;
+  const startLoadReveals = () => {
+    if (loadRevealsStarted) return;
+    loadRevealsStarted = true;
+
+    initRevealLoad(container, ctx, { skipPrime: true });
+    initVarsLoad(container, ctx, "load", { skipPrime: true });
+  };
+
+  // Expose to page-level scripts (home.js can call this from loader onRevealStart)
+  ctx.startLoadReveals = startLoadReveals;
+
+  // Per-page hooks first (home.js may run loader and call ctx.startLoadReveals() early)
   await initPage(ctx.namespace || "", container, ctx);
 
-  // PLAY load animations AFTER loader
-  initRevealLoad(container, ctx, { skipPrime: true });
-  initVarsLoad(container, ctx, "load", { skipPrime: true });
+  // Fallback: if page didn't start them early, start them now
+  startLoadReveals();
 
   // scroll reveals
   initTextScroll(container);
