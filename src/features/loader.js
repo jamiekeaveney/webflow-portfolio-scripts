@@ -2,13 +2,14 @@ function getLoaderEls() {
   const wrap = document.querySelector('[data-loader="wrap"]');
   if (!wrap) return null;
 
+  const stage = wrap.querySelector(".loader-stage") || wrap;
+
   return {
     wrap,
-    clip: wrap.querySelector('[data-loader="clip"]'),
+    stage,
     heroLetters: wrap.querySelectorAll(".loader-hero-letter"),
     counterWrap: wrap.querySelector(".loader-counter-wrap"),
     progressTrack: wrap.querySelector(".loader-progress-track"),
-    progressRange: wrap.querySelector(".loader-progress-range"),
     progressLine: wrap.querySelector(".loader-progress-line")
   };
 }
@@ -23,48 +24,29 @@ function getLoaderRoot(container) {
 
 const EASE = "expo.out";
 const EASE_IN_OUT = "expo.inOut";
-
 const LINE_HEIGHT = "0.25rem";
-const LINE_HEIGHT_MOBILE = "0.2rem";
 const LETTER_STAGGER_IN = 0.09;
 const LETTER_STAGGER_OUT = 0.05;
 const TRANSFORM_DUR = 1.0;
-
-/**
- * Choose:
- * - "cover"     => big Jamie stays, white wipe covers it
- * - "exit-first" => big Jamie staggers up before white wipe grows
- */
-const HERO_OUT_MODE = "cover";
-
-function getBaseLineHeight() {
-  return window.matchMedia("(max-width: 48rem)").matches ? LINE_HEIGHT_MOBILE : LINE_HEIGHT;
-}
 
 export function loaderShow() {
   const els = getLoaderEls();
   if (!els) return Promise.resolve();
 
-  const baseLineHeight = getBaseLineHeight();
-
   if (!window.gsap) {
     els.wrap.style.display = "block";
     els.wrap.style.pointerEvents = "auto";
-    if (els.clip) els.clip.style.clipPath = "inset(0% 0% 0% 0%)";
     return Promise.resolve();
   }
 
-  const killTargets = [
+  window.gsap.killTweensOf([
     els.wrap,
-    els.clip,
+    els.stage,
     els.counterWrap,
     els.progressTrack,
-    els.progressRange,
     els.progressLine,
     ...(els.heroLetters ? Array.from(els.heroLetters) : [])
-  ].filter(Boolean);
-
-  window.gsap.killTweensOf(killTargets);
+  ]);
 
   window.gsap.set(els.wrap, {
     display: "block",
@@ -72,26 +54,19 @@ export function loaderShow() {
     autoAlpha: 1
   });
 
-  if (els.clip) {
-    window.gsap.set(els.clip, {
-      clipPath: "inset(0% 0% 0% 0%)"
-    });
-  }
+  window.gsap.set(els.stage, {
+    clipPath: "inset(0% 0% 0% 0%)"
+  });
 
   if (els.progressTrack) {
     window.gsap.set(els.progressTrack, {
-      height: baseLineHeight,
+      height: LINE_HEIGHT,
       autoAlpha: 1
     });
   }
 
-  if (els.progressRange) {
-    window.gsap.set(els.progressRange, { autoAlpha: 1 });
-  }
-
   if (els.progressLine) {
     window.gsap.set(els.progressLine, {
-      width: "0%",
       height: "100%"
     });
   }
@@ -119,8 +94,6 @@ export function loaderHide() {
   const els = getLoaderEls();
   if (!els) return Promise.resolve();
 
-  const baseLineHeight = getBaseLineHeight();
-
   if (!window.gsap) {
     els.wrap.style.display = "none";
     els.wrap.style.pointerEvents = "none";
@@ -133,26 +106,19 @@ export function loaderHide() {
     autoAlpha: 0
   });
 
-  if (els.clip) {
-    window.gsap.set(els.clip, {
-      clipPath: "inset(0% 0% 0% 0%)"
-    });
-  }
+  window.gsap.set(els.stage, {
+    clipPath: "inset(0% 0% 0% 0%)"
+  });
 
   if (els.progressTrack) {
     window.gsap.set(els.progressTrack, {
-      height: baseLineHeight,
+      height: LINE_HEIGHT,
       autoAlpha: 1
     });
   }
 
-  if (els.progressRange) {
-    window.gsap.set(els.progressRange, { autoAlpha: 1 });
-  }
-
   if (els.progressLine) {
     window.gsap.set(els.progressLine, {
-      width: "0%",
       height: "100%"
     });
   }
@@ -182,10 +148,9 @@ export function loaderProgressTo(duration = 1.5, container = document) {
   const state = { value: 0 };
   const tl = window.gsap.timeline();
 
-  // smooth “designer” progression; no weird pulse
   tl.to(state, {
-    value: 0.74,
-    duration: duration * 0.56,
+    value: 0.72,
+    duration: duration * 0.52,
     ease: EASE,
     onUpdate: () => {
       root.style.setProperty("--_feedback---number-counter", String(state.value));
@@ -193,8 +158,8 @@ export function loaderProgressTo(duration = 1.5, container = document) {
   });
 
   tl.to(state, {
-    value: 0.93,
-    duration: duration * 0.24,
+    value: 0.92,
+    duration: duration * 0.28,
     ease: "power2.out",
     onUpdate: () => {
       root.style.setProperty("--_feedback---number-counter", String(state.value));
@@ -228,42 +193,20 @@ export function loaderOutro() {
       yPercent: -100,
       duration: TRANSFORM_DUR,
       ease: EASE
-    }, 0.00);
+    }, 0.04);
   }
 
-  // Optional big Jamie exit BEFORE wipe grows
-  if (HERO_OUT_MODE === "exit-first" && els.heroLetters && els.heroLetters.length) {
-    tl.to(els.heroLetters, {
-      yPercent: -100,
-      duration: TRANSFORM_DUR,
-      ease: EASE,
-      stagger: {
-        each: LETTER_STAGGER_OUT,
-        from: "start"
-      }
-    }, 0.00);
-  }
-
-  // White progress line becomes wipe (height grows)
+  // White line becomes full-height wipe
   if (els.progressLine) {
     tl.to(els.progressLine, {
       height: "100vh",
       duration: 1.0,
       ease: EASE_IN_OUT
-    }, HERO_OUT_MODE === "exit-first" ? 0.18 : 0.10);
+    }, 0.10);
   }
 
-  // Track/range can fade once wipe starts
-  if (els.progressTrack) {
-    tl.to(els.progressTrack, {
-      autoAlpha: 0,
-      duration: 0.25,
-      ease: "none"
-    }, 0.38);
-  }
-
-  // If cover mode, Jamie exits later (or comment this out entirely to let clip hide it)
-  if (HERO_OUT_MODE === "cover" && els.heroLetters && els.heroLetters.length) {
+  // Keep Jamie visible during wipe (difference), then stagger it out late
+  if (els.heroLetters && els.heroLetters.length) {
     tl.to(els.heroLetters, {
       yPercent: -100,
       duration: TRANSFORM_DUR,
@@ -272,16 +215,26 @@ export function loaderOutro() {
         each: LETTER_STAGGER_OUT,
         from: "start"
       }
-    }, 0.85);
+    }, 0.78);
   }
 
-  // Clip the whole loader away BEFORE wipe fully settles (prevents white hold)
-  if (els.clip) {
-    tl.to(els.clip, {
+  // Fade out track once wipe is underway
+  if (els.progressTrack) {
+    tl.to(els.progressTrack, {
+      autoAlpha: 0,
+      duration: 0.25,
+      ease: "none"
+    }, 0.45);
+  }
+
+  // Start clipping the whole loader scene BEFORE white reaches top
+  // This avoids a full-screen white hold.
+  if (els.stage) {
+    tl.to(els.stage, {
       clipPath: "inset(0% 0% 100% 0%)",
-      duration: 0.78,
+      duration: 0.9,
       ease: EASE_IN_OUT
-    }, 0.78);
+    }, 0.82);
   }
 
   return tl.then(() => {});
