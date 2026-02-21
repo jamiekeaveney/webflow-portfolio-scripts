@@ -212,7 +212,7 @@ export function loaderOutro() {
       duration: TRANSFORM_DUR,
       ease: EASE,
       stagger: { each: LETTER_STAGGER_OUT, from: "start" }
-    }, 0.78);
+    }, 0.20);
   }
 
   if (els.progressTrack) {
