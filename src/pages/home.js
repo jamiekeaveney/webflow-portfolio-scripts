@@ -9,28 +9,28 @@ export async function initHome(container, ctx) {
 
   initLoaderCounter(container);
 
-  let started = false;
-  const startHomeSystems = () => {
-    if (started) return;
-    started = true;
-
-    // Start global/page load reveals early (from app.js)
-    if (ctx && typeof ctx.startLoadReveals === "function") {
-      ctx.startLoadReveals();
-    }
-
-    // Start home-specific systems
+  const startHomeFeatures = () => {
     initScroll1(container);
     initLenisCentre(container);
   };
 
   if (ctx && ctx.isFirstLoad) {
+    let started = false;
+    const once = () => {
+      if (started) return;
+      started = true;
+      startHomeFeatures();
+    };
+
     await runLoader(1.5, container, {
-      onRevealStart: startHomeSystems
+      onRevealStart: once
     });
+
+    // safety (in case callback didn't fire for any reason)
+    once();
   } else {
     await loaderHide();
-    startHomeSystems();
+    startHomeFeatures();
   }
 
   return Promise.resolve();
