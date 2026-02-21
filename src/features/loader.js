@@ -59,15 +59,15 @@ export function loaderShow() {
   });
 
   if (els.progressTrack) {
-    window.gsap.set(els.progressTrack, {
-      height: LINE_HEIGHT,
-      autoAlpha: 1
-    });
+    window.gsap.set(els.progressTrack, { autoAlpha: 1 });
   }
 
   if (els.progressLine) {
     window.gsap.set(els.progressLine, {
-      height: "100%"
+      width: "0%",
+      height: LINE_HEIGHT,
+      bottom: 0,
+      left: 0
     });
   }
 
@@ -75,9 +75,8 @@ export function loaderShow() {
     window.gsap.set(els.counterWrap, { yPercent: 0 });
   }
 
-  if (els.heroLetters && els.heroLetters.length) {
+  if (els.heroLetters?.length) {
     window.gsap.set(els.heroLetters, { yPercent: 120 });
-
     window.gsap.to(els.heroLetters, {
       yPercent: 0,
       duration: TRANSFORM_DUR,
@@ -111,15 +110,12 @@ export function loaderHide() {
   });
 
   if (els.progressTrack) {
-    window.gsap.set(els.progressTrack, {
-      height: LINE_HEIGHT,
-      autoAlpha: 1
-    });
+    window.gsap.set(els.progressTrack, { autoAlpha: 1 });
   }
 
   if (els.progressLine) {
     window.gsap.set(els.progressLine, {
-      height: "100%"
+      clearProps: "all"
     });
   }
 
@@ -127,7 +123,7 @@ export function loaderHide() {
     window.gsap.set(els.counterWrap, { yPercent: 0 });
   }
 
-  if (els.heroLetters && els.heroLetters.length) {
+  if (els.heroLetters?.length) {
     window.gsap.set(els.heroLetters, { clearProps: "transform" });
   }
 
@@ -136,7 +132,8 @@ export function loaderHide() {
 
 export function loaderProgressTo(duration = 1.5, container = document) {
   const root = getLoaderRoot(container);
-  if (!root) return Promise.resolve();
+  const els = getLoaderEls();
+  if (!root || !els) return Promise.resolve();
 
   root.style.setProperty("--_feedback---number-counter", "0");
 
@@ -187,7 +184,6 @@ export function loaderOutro() {
 
   const tl = window.gsap.timeline();
 
-  // Counter exits upward (clipped)
   if (els.counterWrap) {
     tl.to(els.counterWrap, {
       yPercent: -100,
@@ -196,7 +192,7 @@ export function loaderOutro() {
     }, 0.04);
   }
 
-  // White line becomes full-height wipe
+  // White line expands upward from the bottom
   if (els.progressLine) {
     tl.to(els.progressLine, {
       height: "100vh",
@@ -205,20 +201,18 @@ export function loaderOutro() {
     }, 0.10);
   }
 
-  // Keep Jamie visible during wipe (difference), then stagger it out late
-  if (els.heroLetters && els.heroLetters.length) {
+  // Jamie stays visible through the white fill (difference blend),
+  // then exits upward late
+  if (els.heroLetters?.length) {
     tl.to(els.heroLetters, {
       yPercent: -100,
       duration: TRANSFORM_DUR,
       ease: EASE,
-      stagger: {
-        each: LETTER_STAGGER_OUT,
-        from: "start"
-      }
+      stagger: { each: LETTER_STAGGER_OUT, from: "start" }
     }, 0.78);
   }
 
-  // Fade out track once wipe is underway
+  // Fade the grey track once the wipe is clearly underway
   if (els.progressTrack) {
     tl.to(els.progressTrack, {
       autoAlpha: 0,
@@ -227,14 +221,14 @@ export function loaderOutro() {
     }, 0.45);
   }
 
-  // Start clipping the whole loader scene BEFORE white reaches top
-  // This avoids a full-screen white hold.
+  // Start clipping the whole loader scene BEFORE the white reaches top
+  // so we avoid a dead full-white frame
   if (els.stage) {
     tl.to(els.stage, {
       clipPath: "inset(0% 0% 100% 0%)",
       duration: 0.9,
       ease: EASE_IN_OUT
-    }, 0.82);
+    }, 0.76);
   }
 
   return tl.then(() => {});
