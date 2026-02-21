@@ -26,7 +26,6 @@ export async function initHome(container, ctx) {
       onRevealStart: once
     });
 
-    // safety (in case callback didn't fire for any reason)
     once();
   } else {
     await loaderHide();
@@ -37,5 +36,5 @@ export async function initHome(container, ctx) {
 }
 
 export function destroyHome() {
-  // no-op: global cleanup handles this
+  // no-op
 }

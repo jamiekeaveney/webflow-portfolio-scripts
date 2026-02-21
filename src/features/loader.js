@@ -26,24 +26,18 @@ function getLoaderRoot(container) {
 const EASE_OUT = "expo.out";
 const EASE_IN_OUT = "expo.inOut";
 
-const PROGRESS_LINE_HOLD = 0.25; // visual line thickness already in CSS
-const TEXT_DUR = 1.0;            // your transform flavour
-const FADE_DUR = 0.5;            // your fade flavour
+const TEXT_DUR = 1.0;
+const FADE_DUR = 0.5;
 const LETTER_STAGGER = 0.09;
+const LETTER_STAGGER_OUT = 0.05;
 
-/**
- * Split loader line into chars with SplitText (preferred),
- * fallback to manual spans if SplitText not present.
- */
 function splitLoaderLine(el) {
   if (!el) return null;
 
-  // Re-use if already split this session
   if (el.__loaderChars && el.__loaderChars.length) {
     return { chars: el.__loaderChars, revert: el.__loaderRevert || null };
   }
 
-  // GSAP SplitText route
   if (window.gsap && window.SplitText) {
     const split = new window.SplitText(el, {
       type: "chars",
@@ -61,7 +55,6 @@ function splitLoaderLine(el) {
     return { chars, revert: el.__loaderRevert };
   }
 
-  // Fallback route (manual spans)
   const text = el.textContent || "";
   el.innerHTML = "";
 
@@ -71,7 +64,6 @@ function splitLoaderLine(el) {
   for (const ch of text) {
     const span = document.createElement("span");
     span.className = "loader-char";
-    span.style.display = "inline-block";
     span.textContent = ch === " " ? "\u00A0" : ch;
     frag.appendChild(span);
     chars.push(span);
@@ -85,37 +77,9 @@ function splitLoaderLine(el) {
   return { chars, revert: null };
 }
 
-function prepLineChars(chars, y = 120, autoAlpha = 1) {
-  if (!window.gsap || !chars?.length) return;
-  window.gsap.set(chars, {
-    yPercent: y,
-    autoAlpha,
-    willChange: "transform, opacity"
-  });
-}
-
-function animateLineIn(chars, opts = {}) {
-  if (!window.gsap || !chars?.length) return null;
-  return window.gsap.to(chars, {
-    yPercent: 0,
-    autoAlpha: 1,
-    duration: opts.duration ?? TEXT_DUR,
-    ease: opts.ease ?? EASE_OUT,
-    stagger: opts.stagger ?? LETTER_STAGGER,
-    overwrite: "auto"
-  });
-}
-
-function animateLineOut(chars, opts = {}) {
-  if (!window.gsap || !chars?.length) return null;
-  return window.gsap.to(chars, {
-    yPercent: -100,
-    autoAlpha: opts.fade ? 0 : 1,
-    duration: opts.duration ?? TEXT_DUR,
-    ease: opts.ease ?? EASE_OUT,
-    stagger: opts.stagger ?? 0.05,
-    overwrite: "auto"
-  });
+function setProgress(root, value) {
+  if (!root) return;
+  root.style.setProperty("--_feedback---number-counter", String(value));
 }
 
 export function loaderShow() {
@@ -141,37 +105,37 @@ export function loaderShow() {
     ...(split2?.chars || [])
   ]);
 
-  // reset progress var
-  els.wrap.style.setProperty("--_feedback---number-counter", "0");
+  setProgress(els.wrap, 0);
 
-  // base visible states
   window.gsap.set(els.wrap, {
     display: "block",
     pointerEvents: "auto",
     autoAlpha: 1
   });
 
-  window.gsap.set(els.stage, {
-    clipPath: "inset(0% 0% 0% 0%)",
-    autoAlpha: 1
-  });
+  window.gsap.set(els.stage, { autoAlpha: 1 });
 
   if (els.progressTrack) window.gsap.set(els.progressTrack, { autoAlpha: 1 });
-  if (els.progressLine) window.gsap.set(els.progressLine, { clearProps: "transform" });
+  if (els.counterWrap) window.gsap.set(els.counterWrap, { yPercent: 0, autoAlpha: 1 });
 
-  if (els.counterWrap) {
-    window.gsap.set(els.counterWrap, { yPercent: 0, autoAlpha: 1 });
+  // Prep line 1 (Hi) hidden below, line 2 (I’m) hidden below too
+  if (split1?.chars?.length) {
+    window.gsap.set(split1.chars, { yPercent: 120, autoAlpha: 1 });
+  }
+  if (split2?.chars?.length) {
+    window.gsap.set(split2.chars, { yPercent: 120, autoAlpha: 1 });
   }
 
-  // prep copy
-  if (els.line1) window.gsap.set(els.line1, { autoAlpha: 1 });
-  if (els.line2) window.gsap.set(els.line2, { autoAlpha: 1 });
-
-  prepLineChars(split1?.chars, 120, 1);
-  prepLineChars(split2?.chars, 120, 1);
-
-  // animate first line in
-  animateLineIn(split1?.chars);
+  // Animate "Hi" in immediately
+  if (split1?.chars?.length) {
+    window.gsap.to(split1.chars, {
+      yPercent: 0,
+      duration: TEXT_DUR,
+      ease: EASE_OUT,
+      stagger: LETTER_STAGGER,
+      overwrite: "auto"
+    });
+  }
 
   return Promise.resolve();
 }
@@ -192,70 +156,58 @@ export function loaderHide() {
     autoAlpha: 0
   });
 
-  window.gsap.set(els.stage, {
-    clipPath: "inset(0% 0% 0% 0%)",
-    autoAlpha: 1
-  });
+  window.gsap.set(els.stage, { autoAlpha: 1 });
 
   if (els.counterWrap) window.gsap.set(els.counterWrap, { clearProps: "transform,opacity" });
   if (els.progressTrack) window.gsap.set(els.progressTrack, { clearProps: "opacity" });
-  if (els.progressLine) window.gsap.set(els.progressLine, { clearProps: "transform" });
-
-  // NOTE: we intentionally do not revert SplitText here
-  // to avoid flashes/rebuilds during the session.
-  // If you want a hard reset on page refresh only, this is fine.
 
   return Promise.resolve();
 }
 
+/**
+ * Progress is split intentionally:
+ * - first chunk during "Hi" (to 60%)
+ * - second chunk during "I’m" (to 100%)
+ */
 export function loaderProgressTo(duration = 1.5, container = document) {
   const root = getLoaderRoot(container);
   if (!root) return Promise.resolve();
 
-  root.style.setProperty("--_feedback---number-counter", "0");
+  setProgress(root, 0);
 
   if (!window.gsap) {
-    root.style.setProperty("--_feedback---number-counter", "1");
+    setProgress(root, 1);
     return Promise.resolve();
   }
 
   const state = { value: 0 };
   const tl = window.gsap.timeline();
 
-  // 2-step only (expo family)
+  // Stage 1: up to 60% while "Hi" is on
   tl.to(state, {
-    value: 0.84,
-    duration: duration * 0.68,
+    value: 0.6,
+    duration: duration * 0.62,
     ease: EASE_OUT,
-    onUpdate: () => {
-      root.style.setProperty("--_feedback---number-counter", String(state.value));
-    }
+    onUpdate: () => setProgress(root, state.value)
   });
 
+  // Small hold to sync with transition into "I’m"
+  tl.to({}, {
+    duration: duration * 0.08
+  });
+
+  // Stage 2: finish during "I’m"
   tl.to(state, {
     value: 1,
-    duration: duration * 0.32,
+    duration: duration * 0.30,
     ease: EASE_IN_OUT,
-    onUpdate: () => {
-      root.style.setProperty("--_feedback---number-counter", String(state.value));
-    },
-    onComplete: () => {
-      root.style.setProperty("--_feedback---number-counter", "1");
-    }
+    onUpdate: () => setProgress(root, state.value),
+    onComplete: () => setProgress(root, 1)
   });
 
   return tl.then(() => {});
 }
 
-/**
- * Text sequence:
- * - "Hi" out
- * - "I’m" in
- * - quick hold
- * - loader exits (fade + clip up)
- *
- * onRevealStart fires BEFORE full hide so homepage reveal can start under it.
- */
 export function loaderOutro({ onRevealStart } = {}) {
   const els = getLoaderEls();
   if (!els || !window.gsap) return Promise.resolve();
@@ -272,26 +224,26 @@ export function loaderOutro({ onRevealStart } = {}) {
     if (typeof onRevealStart === "function") onRevealStart();
   };
 
-  // Counter slides up (clipped)
-  if (els.counterWrap) {
-    tl.to(els.counterWrap, {
-      yPercent: -100,
-      duration: TEXT_DUR,
-      ease: EASE_OUT
-    }, 0);
-  }
-
   // "Hi" out
   if (split1?.chars?.length) {
     tl.to(split1.chars, {
       yPercent: -100,
       duration: TEXT_DUR,
       ease: EASE_OUT,
-      stagger: { each: 0.05, from: "start" }
+      stagger: { each: LETTER_STAGGER_OUT, from: "start" }
     }, 0.02);
   }
 
-  // "I’m" in (slightly overlaps)
+  // Counter out (same upward motion)
+  if (els.counterWrap) {
+    tl.to(els.counterWrap, {
+      yPercent: -100,
+      duration: TEXT_DUR,
+      ease: EASE_OUT
+    }, 0.02);
+  }
+
+  // "I’m" in (same stagger style as "Hi")
   if (split2?.chars?.length) {
     tl.to(split2.chars, {
       yPercent: 0,
@@ -301,29 +253,37 @@ export function loaderOutro({ onRevealStart } = {}) {
     }, 0.28);
   }
 
-  // Start homepage reveal while loader still visible (important)
-  tl.call(fireRevealStart, [], 0.6);
+  // Start homepage reveal while "I’m" is still visible
+  tl.call(fireRevealStart, [], 0.62);
 
-  // Small hold, then loader exits quickly so the homepage is visible immediately
+  // Hold your current timing feel, then slide "I’m" out
+  if (split2?.chars?.length) {
+    tl.to(split2.chars, {
+      yPercent: -100,
+      duration: TEXT_DUR,
+      ease: EASE_OUT,
+      stagger: { each: LETTER_STAGGER_OUT, from: "start" }
+    }, 1.18);
+  }
+
+  // Clean fade only (no clip-path)
   tl.to(els.stage, {
     autoAlpha: 0,
     duration: FADE_DUR,
     ease: EASE_IN_OUT
-  }, 1.15);
-
-  // Optional subtle clip for polish (very short)
-  tl.to(els.stage, {
-    clipPath: "inset(0% 0% 100% 0%)",
-    duration: 0.75,
-    ease: EASE_IN_OUT
-  }, 1.05);
+  }, 1.32);
 
   return tl.then(() => {});
 }
 
 export async function runLoader(duration = 1.5, container = document, opts = {}) {
   await loaderShow();
-  await loaderProgressTo(duration, container);
-  await loaderOutro(opts);
+
+  // Run progress and text sequence together so they stay synced
+  await Promise.all([
+    loaderProgressTo(duration, container),
+    loaderOutro(opts)
+  ]);
+
   await loaderHide();
 }
