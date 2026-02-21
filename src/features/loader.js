@@ -35,7 +35,7 @@ const TRANSFORM_DUR = 1.0;
  * - "cover"     => big Jamie stays, white wipe covers it
  * - "exit-first" => big Jamie staggers up before white wipe grows
  */
-const HERO_OUT_MODE = "exit-first";
+const HERO_OUT_MODE = "cover";
 
 function getBaseLineHeight() {
   return window.matchMedia("(max-width: 48rem)").matches ? LINE_HEIGHT_MOBILE : LINE_HEIGHT;
