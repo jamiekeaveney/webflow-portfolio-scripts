@@ -4,21 +4,16 @@ function getLoaderEls() {
 
   return {
     wrap,
-    bg: wrap.querySelector('[data-loader="bg"]') || wrap,
-    content: wrap.querySelector('[data-loader="content"]') || null,
     heroLetters: wrap.querySelectorAll(".loader-hero-letter"),
     counterWrap: wrap.querySelector(".loader-counter-wrap"),
     progressTrack: wrap.querySelector(".loader-progress-track"),
-    planeWhite: wrap.querySelector(".loader-plane-white"),
-    planeGrey: wrap.querySelector(".loader-plane-grey")
+    planeWhite: wrap.querySelector(".loader-plane-white")
   };
 }
 
 function getLoaderRoot(container) {
   return (
-    (container && container.querySelector && container.querySelector("[data-loader]")) ||
     (container && container.querySelector && container.querySelector('[data-loader="wrap"]')) ||
-    document.querySelector("[data-loader]") ||
     document.querySelector('[data-loader="wrap"]') ||
     document.documentElement
   );
@@ -28,6 +23,7 @@ const EASE = "expo.out";
 const EASE_IN_OUT = "expo.inOut";
 const LINE_HEIGHT = "0.25rem";
 const LETTER_STAGGER_IN = 0.09;
+const LETTER_STAGGER_OUT = 0.05;
 const TRANSFORM_DUR = 1.0;
 
 export function loaderShow() {
@@ -46,7 +42,6 @@ export function loaderShow() {
     els.counterWrap,
     els.progressTrack,
     els.planeWhite,
-    els.planeGrey,
     ...(els.heroLetters ? Array.from(els.heroLetters) : [])
   ]);
 
@@ -64,10 +59,13 @@ export function loaderShow() {
     });
   }
 
-  if (els.planeWhite) window.gsap.set(els.planeWhite, { height: "0%" });
-  if (els.planeGrey) window.gsap.set(els.planeGrey, { height: "0%" });
+  if (els.planeWhite) {
+    window.gsap.set(els.planeWhite, { height: "0%" });
+  }
 
-  if (els.counterWrap) window.gsap.set(els.counterWrap, { yPercent: 0 });
+  if (els.counterWrap) {
+    window.gsap.set(els.counterWrap, { yPercent: 0 });
+  }
 
   if (els.heroLetters && els.heroLetters.length) {
     window.gsap.set(els.heroLetters, { yPercent: 120 });
@@ -108,10 +106,13 @@ export function loaderHide() {
     });
   }
 
-  if (els.planeWhite) window.gsap.set(els.planeWhite, { height: "0%" });
-  if (els.planeGrey) window.gsap.set(els.planeGrey, { height: "0%" });
+  if (els.planeWhite) {
+    window.gsap.set(els.planeWhite, { height: "0%" });
+  }
 
-  if (els.counterWrap) window.gsap.set(els.counterWrap, { yPercent: 0 });
+  if (els.counterWrap) {
+    window.gsap.set(els.counterWrap, { yPercent: 0 });
+  }
 
   if (els.heroLetters && els.heroLetters.length) {
     window.gsap.set(els.heroLetters, { clearProps: "transform" });
@@ -134,7 +135,7 @@ export function loaderProgressTo(duration = 1.5, container = document) {
   const state = { value: 0 };
   const tl = window.gsap.timeline();
 
-  // Smooth branded progress curve
+  // nicer staged curve, still "expo-flavoured"
   tl.to(state, {
     value: 0.72,
     duration: duration * 0.52,
@@ -174,16 +175,16 @@ export function loaderOutro() {
 
   const tl = window.gsap.timeline();
 
-  // Counter can slide away (hero should NOT)
+  // Counter exits first (upward, clipped)
   if (els.counterWrap) {
     tl.to(els.counterWrap, {
       yPercent: -100,
-      duration: 1.0,
+      duration: TRANSFORM_DUR,
       ease: EASE
-    }, 0.06);
+    }, 0.05);
   }
 
-  // White wipe gets full-screen moment
+  // White wipe fills screen
   if (els.planeWhite) {
     tl.to(els.planeWhite, {
       height: "100%",
@@ -192,32 +193,34 @@ export function loaderOutro() {
     }, 0.12);
   }
 
-  // Fade progress track once wipe is underway
+  // Keep Jamie visible during wipe (difference blend), then exit later
+  if (els.heroLetters && els.heroLetters.length) {
+    tl.to(els.heroLetters, {
+      yPercent: -100,
+      duration: TRANSFORM_DUR,
+      ease: EASE,
+      stagger: {
+        each: LETTER_STAGGER_OUT,
+        from: "start"
+      }
+    }, 0.82);
+  }
+
+  // Fade progress bar once wipe is underway
   if (els.progressTrack) {
     tl.to(els.progressTrack, {
       autoAlpha: 0,
       duration: 0.25,
       ease: "none"
-    }, 0.42);
+    }, 0.45);
   }
 
-  // Grey wipe rises AFTER white and only partially.
-  // Because grey is above the hero, it visually "cuts off" the Jamie text.
-  if (els.planeGrey) {
-    tl.to(els.planeGrey, {
-      height: "100vh",
-      duration: 0.58,
-      ease: EASE_IN_OUT
-    }, 0.78);
-  }
-
-  // Clip the whole loader away before grey overstays.
-  // This gives white the main visual moment, with grey just being the cutter.
+  // Final reveal off the page
   tl.to(els.wrap, {
     clipPath: "inset(0% 0% 100% 0%)",
-    duration: 0.72,
+    duration: 0.8,
     ease: EASE_IN_OUT
-  }, 1.08);
+  }, 1.18);
 
   return tl.then(() => {});
 }
