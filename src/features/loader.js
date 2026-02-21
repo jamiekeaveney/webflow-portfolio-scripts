@@ -229,7 +229,7 @@ export function loaderOutro() {
       clipPath: "inset(0% 0% 100% 0%)",
       duration: 0.9,
       ease: EASE_IN_OUT
-    }, 0.76);
+    }, 0.55);
   }
 
   return tl.then(() => {});
