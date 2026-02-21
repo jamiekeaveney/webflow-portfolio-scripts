@@ -207,7 +207,7 @@ export function loaderOutro({ onRevealStart } = {}) {
       duration: TRANSFORM_DUR,
       ease: EASE,
       stagger: { each: LETTER_STAGGER_OUT, from: "start" }
-    }, 0.05);
+    }, 0.90);
   }
 
   // White line expands upward from the bottom (same element)
