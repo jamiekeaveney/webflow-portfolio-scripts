@@ -196,15 +196,6 @@ export function loaderOutro() {
     }, 0.04);
   }
 
-  // White line expands upward from the bottom (same element)
-  if (els.progressLine) {
-    tl.to(els.progressLine, {
-      height: "100vh",
-      duration: 1.0,
-      ease: EASE_IN_OUT
-    }, 0.10);
-  }
-
   // Jamie remains visible through wipe, exits later
   if (els.heroLetters?.length) {
     tl.to(els.heroLetters, {
@@ -212,7 +203,16 @@ export function loaderOutro() {
       duration: TRANSFORM_DUR,
       ease: EASE,
       stagger: { each: LETTER_STAGGER_OUT, from: "start" }
-    }, 0.20);
+    }, 0.05);
+  }
+
+  // White line expands upward from the bottom (same element)
+  if (els.progressLine) {
+    tl.to(els.progressLine, {
+      height: "100vh",
+      duration: 1.0,
+      ease: EASE_IN_OUT
+    }, 0.15);
   }
 
   if (els.progressTrack) {
@@ -229,7 +229,7 @@ export function loaderOutro() {
       clipPath: "inset(0% 0% 100% 0%)",
       duration: 0.9,
       ease: EASE_IN_OUT
-    }, 0.55);
+    }, 0.45);
   }
 
   return tl.then(() => {});
