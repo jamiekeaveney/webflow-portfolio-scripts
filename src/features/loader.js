@@ -48,6 +48,9 @@ export function loaderShow() {
     ...(els.heroLetters ? Array.from(els.heroLetters) : [])
   ]);
 
+  // reset progress var so CSS width starts at 0
+  els.wrap.style.setProperty("--_feedback---number-counter", "0");
+
   window.gsap.set(els.wrap, {
     display: "block",
     pointerEvents: "auto",
@@ -63,8 +66,8 @@ export function loaderShow() {
   }
 
   if (els.progressLine) {
+    // IMPORTANT: do NOT set width here, CSS var controls width
     window.gsap.set(els.progressLine, {
-      width: "0%",
       height: LINE_HEIGHT,
       bottom: 0,
       left: 0
@@ -77,6 +80,7 @@ export function loaderShow() {
 
   if (els.heroLetters?.length) {
     window.gsap.set(els.heroLetters, { yPercent: 120 });
+
     window.gsap.to(els.heroLetters, {
       yPercent: 0,
       duration: TRANSFORM_DUR,
@@ -114,8 +118,9 @@ export function loaderHide() {
   }
 
   if (els.progressLine) {
+    // keep CSS width logic intact; only clear animated props
     window.gsap.set(els.progressLine, {
-      clearProps: "all"
+      clearProps: "height,bottom,left"
     });
   }
 
@@ -132,8 +137,7 @@ export function loaderHide() {
 
 export function loaderProgressTo(duration = 1.5, container = document) {
   const root = getLoaderRoot(container);
-  const els = getLoaderEls();
-  if (!root || !els) return Promise.resolve();
+  if (!root) return Promise.resolve();
 
   root.style.setProperty("--_feedback---number-counter", "0");
 
@@ -192,7 +196,7 @@ export function loaderOutro() {
     }, 0.04);
   }
 
-  // White line expands upward from the bottom
+  // White line expands upward from the bottom (same element)
   if (els.progressLine) {
     tl.to(els.progressLine, {
       height: "100vh",
@@ -201,8 +205,7 @@ export function loaderOutro() {
     }, 0.10);
   }
 
-  // Jamie stays visible through the white fill (difference blend),
-  // then exits upward late
+  // Jamie remains visible through wipe, exits later
   if (els.heroLetters?.length) {
     tl.to(els.heroLetters, {
       yPercent: -100,
@@ -212,7 +215,6 @@ export function loaderOutro() {
     }, 0.78);
   }
 
-  // Fade the grey track once the wipe is clearly underway
   if (els.progressTrack) {
     tl.to(els.progressTrack, {
       autoAlpha: 0,
@@ -221,8 +223,7 @@ export function loaderOutro() {
     }, 0.45);
   }
 
-  // Start clipping the whole loader scene BEFORE the white reaches top
-  // so we avoid a dead full-white frame
+  // Clip the whole stage before white fully tops out
   if (els.stage) {
     tl.to(els.stage, {
       clipPath: "inset(0% 0% 100% 0%)",
