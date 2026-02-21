@@ -4,13 +4,39 @@ function getLoaderEls() {
   const wrap = document.querySelector('[data-loader="wrap"]');
   if (!wrap) return null;
 
+  // Keep this flexible so it works with your current markup
+  const stage = wrap.querySelector(".loader-stage") || wrap;
+
+  // Two-word loader setup (Hi -> I'm)
+  const wordHi =
+    wrap.querySelector('[data-loader-word="hi"]') ||
+    wrap.querySelector(".loader-word-hi") ||
+    wrap.querySelector(".loader-copy-hi");
+
+  const wordIm =
+    wrap.querySelector('[data-loader-word="im"]') ||
+    wrap.querySelector(".loader-word-im") ||
+    wrap.querySelector(".loader-copy-im");
+
+  const counterWrap = wrap.querySelector(".loader-counter-wrap");
+  const progressTrack = wrap.querySelector(".loader-progress-track");
+  const progressLine = wrap.querySelector(".loader-progress-line");
+
   return {
     wrap,
-    helloWord: wrap.querySelector('[data-loader-word="hello"]'),
-    imWord: wrap.querySelector('[data-loader-word="im"]'),
-    counterWrap: wrap.querySelector(".loader-counter-wrap"),
-    progressLine: wrap.querySelector(".loader-progress-line")
+    stage,
+    wordHi,
+    wordIm,
+    counterWrap,
+    progressTrack,
+    progressLine
   };
+}
+
+function getLetters(el) {
+  if (!el) return [];
+  // Works with your split.js output first, falls back to manual spans if present
+  return Array.from(el.querySelectorAll(".single-letter, .loader-hero-letter"));
 }
 
 function getLoaderRoot(container) {
@@ -25,61 +51,18 @@ const EASE_OUT = "expo.out";
 const EASE_IN_OUT = "expo.inOut";
 
 const LINE_HEIGHT = "0.25rem";
+const LETTER_STAGGER_IN = 0.09;  // matches your home feel
+const LETTER_STAGGER_OUT = 0.06;
 const WORD_DUR = 1.0;
-const WORD_STAGGER_IN = 0.09;
-const WORD_STAGGER_OUT = 0.05;
 
-function getLetters(wordEl) {
-  if (!wordEl) return [];
-  return Array.from(wordEl.querySelectorAll(".loader-word-letter"));
-}
-
-function setWordState(wordEl, yPercent = 120) {
-  if (!window.gsap || !wordEl) return;
-  const letters = getLetters(wordEl);
-  if (!letters.length) return;
-  window.gsap.set(letters, { yPercent });
-}
-
-function animateWordIn(tl, wordEl, at = 0) {
-  if (!wordEl) return;
-  const letters = getLetters(wordEl);
-  if (!letters.length) return;
-
-  tl.to(
-    letters,
-    {
-      yPercent: 0,
-      duration: WORD_DUR,
-      ease: EASE_OUT,
-      stagger: WORD_STAGGER_IN,
-      overwrite: "auto"
-    },
-    at
-  );
-}
-
-function animateWordOut(tl, wordEl, at = 0) {
-  if (!wordEl) return;
-  const letters = getLetters(wordEl);
-  if (!letters.length) return;
-
-  tl.to(
-    letters,
-    {
-      yPercent: -100,
-      duration: WORD_DUR,
-      ease: EASE_OUT,
-      stagger: { each: WORD_STAGGER_OUT, from: "start" },
-      overwrite: "auto"
-    },
-    at
-  );
-}
+// ---------- SHOW / HIDE ----------
 
 export function loaderShow() {
   const els = getLoaderEls();
   if (!els) return Promise.resolve();
+
+  const hiLetters = getLetters(els.wordHi);
+  const imLetters = getLetters(els.wordIm);
 
   if (!window.gsap) {
     els.wrap.style.display = "block";
@@ -89,50 +72,83 @@ export function loaderShow() {
 
   window.gsap.killTweensOf([
     els.wrap,
+    els.stage,
     els.counterWrap,
+    els.progressTrack,
     els.progressLine,
-    ...getLetters(els.helloWord),
-    ...getLetters(els.imWord)
+    ...hiLetters,
+    ...imLetters
   ]);
 
-  // Reset progress var (CSS width uses this)
+  // Reset progress variable
   els.wrap.style.setProperty("--_feedback---number-counter", "0");
 
+  // Show loader
   window.gsap.set(els.wrap, {
     display: "block",
     pointerEvents: "auto",
     autoAlpha: 1
   });
 
-  if (els.progressLine) {
-    window.gsap.set(els.progressLine, {
-      height: LINE_HEIGHT
+  // No clip-path outro needed anymore, but keep stage reset if present
+  if (els.stage) {
+    window.gsap.set(els.stage, {
+      clipPath: "inset(0% 0% 0% 0%)"
     });
   }
 
-  if (els.counterWrap) {
-    window.gsap.set(els.counterWrap, { yPercent: 0, autoAlpha: 1 });
+  // Track / line visible
+  if (els.progressTrack) {
+    window.gsap.set(els.progressTrack, { autoAlpha: 1 });
   }
 
-  // Prepare words
-  setWordState(els.helloWord, 120);
-  setWordState(els.imWord, 120);
+  if (els.progressLine) {
+    window.gsap.set(els.progressLine, {
+      height: LINE_HEIGHT,
+      bottom: 0,
+      left: 0
+      // width is controlled by CSS var
+    });
+  }
 
-  // Intro timeline (keep the timing feel you liked)
-  const tl = window.gsap.timeline();
+  // Counter visible (do NOT animate it out here)
+  if (els.counterWrap) {
+    window.gsap.set(els.counterWrap, {
+      yPercent: 0,
+      autoAlpha: 1
+    });
+  }
 
-  animateWordIn(tl, els.helloWord, 0);
+  // Prep words
+  if (els.wordHi) window.gsap.set(els.wordHi, { autoAlpha: 1 });
+  if (els.wordIm) window.gsap.set(els.wordIm, { autoAlpha: 1 });
 
-  // Hello exits and I'm enters around the same feel as before
-  animateWordOut(tl, els.helloWord, 0.95);
-  animateWordIn(tl, els.imWord, 1.05);
+  // "Hi" starts hidden below
+  if (hiLetters.length) {
+    window.gsap.set(hiLetters, { yPercent: 120 });
+    window.gsap.to(hiLetters, {
+      yPercent: 0,
+      duration: WORD_DUR,
+      ease: EASE_OUT,
+      stagger: LETTER_STAGGER_IN,
+      overwrite: "auto"
+    });
+  }
 
-  return tl.then(() => {});
+  // "I'm" starts hidden below (will animate later)
+  if (imLetters.length) {
+    window.gsap.set(imLetters, { yPercent: 120 });
+  }
+
+  return Promise.resolve();
 }
 
 export function loaderHide() {
   const els = getLoaderEls();
   if (!els) return Promise.resolve();
+
+  const hiLetters = getLetters(els.wordHi);
+  const imLetters = getLetters(els.wordIm);
 
   if (!window.gsap) {
     els.wrap.style.display = "none";
@@ -146,34 +162,47 @@ export function loaderHide() {
     autoAlpha: 0
   });
 
+  if (els.stage) {
+    window.gsap.set(els.stage, {
+      clipPath: "inset(0% 0% 0% 0%)"
+    });
+  }
+
+  if (els.progressTrack) {
+    window.gsap.set(els.progressTrack, { autoAlpha: 1 });
+  }
+
   if (els.progressLine) {
     window.gsap.set(els.progressLine, {
-      clearProps: "height"
+      clearProps: "height,bottom,left"
     });
   }
 
   if (els.counterWrap) {
     window.gsap.set(els.counterWrap, {
-      yPercent: 0,
-      autoAlpha: 1
+      clearProps: "transform,opacity"
     });
   }
 
-  // Reset words back below for next hard refresh
-  setWordState(els.helloWord, 120);
-  setWordState(els.imWord, 120);
+  if (hiLetters.length) window.gsap.set(hiLetters, { clearProps: "transform,opacity" });
+  if (imLetters.length) window.gsap.set(imLetters, { clearProps: "transform,opacity" });
 
   return Promise.resolve();
 }
 
-/**
- * Progress is synced in two stages:
- * - 0 -> 60% while "Hello" is on screen
- * - 60 -> 100% while "I'm" is on screen
- */
+// ---------- PROGRESS + WORD SWITCH ----------
+// This is where we keep the nice timing and sync the line:
+// - progress to ~60% while "Hi" is on screen
+// - switch to "I'm"
+// - finish progress to 100%
+
 export function loaderProgressTo(duration = 1.5, container = document) {
   const root = getLoaderRoot(container);
-  if (!root) return Promise.resolve();
+  const els = getLoaderEls();
+  if (!root || !els) return Promise.resolve();
+
+  const hiLetters = getLetters(els.wordHi);
+  const imLetters = getLetters(els.wordIm);
 
   root.style.setProperty("--_feedback---number-counter", "0");
 
@@ -185,7 +214,7 @@ export function loaderProgressTo(duration = 1.5, container = document) {
   const state = { value: 0 };
   const tl = window.gsap.timeline();
 
-  // Stage 1: to 60%
+  // STEP 1: 0 -> 60% while "Hi" is on screen
   tl.to(state, {
     value: 0.6,
     duration: duration * 0.62,
@@ -195,7 +224,26 @@ export function loaderProgressTo(duration = 1.5, container = document) {
     }
   });
 
-  // Stage 2: 60 -> 100
+  // Word transition: "Hi" out, "I'm" in
+  if (hiLetters.length) {
+    tl.to(hiLetters, {
+      yPercent: -100,
+      duration: WORD_DUR,
+      ease: EASE_OUT,
+      stagger: { each: LETTER_STAGGER_OUT, from: "start" }
+    }, ">-0.06");
+  }
+
+  if (imLetters.length) {
+    tl.to(imLetters, {
+      yPercent: 0,
+      duration: WORD_DUR,
+      ease: EASE_OUT,
+      stagger: { each: LETTER_STAGGER_IN, from: "start" }
+    }, "<0.14");
+  }
+
+  // STEP 2: 60% -> 100% while "I'm" is on screen
   tl.to(state, {
     value: 1,
     duration: duration * 0.38,
@@ -206,57 +254,58 @@ export function loaderProgressTo(duration = 1.5, container = document) {
     onComplete: () => {
       root.style.setProperty("--_feedback---number-counter", "1");
     }
-  });
+  }, "<0.18");
 
   return tl.then(() => {});
 }
 
-/**
- * Final text outro + loader fade.
- * onRevealStart fires exactly when fade begins so homepage reveals start then.
- */
+// ---------- OUTRO ----------
+// Counter exits only at 100% (not at 60)
+// Fire home reveal right when loader starts fading (not after fade finishes)
+
 export function loaderOutro({ onRevealStart } = {}) {
   const els = getLoaderEls();
   if (!els || !window.gsap) return Promise.resolve();
 
-  const tl = window.gsap.timeline();
-  let fired = false;
+  const imLetters = getLetters(els.wordIm);
+  let revealStarted = false;
 
   const fireRevealStart = () => {
-    if (fired) return;
-    fired = true;
+    if (revealStarted) return;
+    revealStarted = true;
     if (typeof onRevealStart === "function") onRevealStart();
   };
 
-  // "I'm" exits first at the end (not the counter)
-  animateWordOut(tl, els.imWord, 0);
+  const tl = window.gsap.timeline();
 
-  // Counter exits at 100% (this fixes your main issue)
-  if (els.counterWrap) {
-    tl.to(
-      els.counterWrap,
-      {
-        yPercent: -100,
-        duration: WORD_DUR,
-        ease: EASE_OUT
-      },
-      0.06
-    );
+  // "I'm" exits upward at the end
+  if (imLetters.length) {
+    tl.to(imLetters, {
+      yPercent: -100,
+      duration: WORD_DUR,
+      ease: EASE_OUT,
+      stagger: { each: LETTER_STAGGER_OUT, from: "start" }
+    }, 0);
   }
 
-  // Trigger home reveal the moment loader fade begins
-  tl.call(fireRevealStart, [], 0.22);
+  // Counter exits at the same time (at 100%)
+  if (els.counterWrap) {
+    tl.to(els.counterWrap, {
+      yPercent: -100,
+      duration: WORD_DUR,
+      ease: EASE_OUT
+    }, 0.02);
+  }
 
-  // Fade loader away (simple, no clip path now)
-  tl.to(
-    els.wrap,
-    {
-      autoAlpha: 0,
-      duration: 0.5,
-      ease: EASE_IN_OUT
-    },
-    0.22
-  );
+  // Start homepage reveal as soon as loader starts fading
+  tl.call(fireRevealStart, [], 0.12);
+
+  // Simple fade out (no clip-path wipe now)
+  tl.to(els.wrap, {
+    autoAlpha: 0,
+    duration: 0.45,
+    ease: EASE_IN_OUT
+  }, 0.12);
 
   return tl.then(() => {});
 }
