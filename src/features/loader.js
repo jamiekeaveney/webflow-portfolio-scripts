@@ -228,7 +228,7 @@ export function loaderOutro({ onRevealStart } = {}) {
   }
 
   // Start the homepage reveal earlier, while the loader is still on top
-  tl.call(fireRevealStart, [], 0.55);
+  tl.call(fireRevealStart, [], 0.35);
 
   // Clip the whole stage before white fully tops out
   if (els.stage) {
