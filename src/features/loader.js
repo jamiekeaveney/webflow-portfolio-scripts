@@ -22,28 +22,21 @@ function digs(n) {
     .join("");
 }
 
-// Y travel from centre of text.
-// At 0%: text centre at bottom padding edge.
-// At 100%: text centre at top padding edge.
+// Y travel from text centre
 function posY(e, pct) {
   const pad = parseFloat(getComputedStyle(e.panel).paddingTop) || 40;
-  const blockH = e.block.getBoundingClientRect().height;
-  const half = blockH / 2;
-  // Total travel = viewport - top pad - bottom pad - one block height
-  // (so the centre never goes past the padding edges)
-  const total = Math.max(0, innerHeight - pad * 2 - blockH);
-  const px = total * (pct / 100);
-  e.block.style.transform = `translate3d(0,${-px}px,0)`;
+  const bh = e.block.getBoundingClientRect().height;
+  const total = Math.max(0, innerHeight - pad * 2 - bh);
+  e.block.style.transform = `translate3d(0,${-(total * pct / 100)}px,0)`;
 }
 
-function lastAnim(container) {
+function lastAnim(el) {
   return new Promise((res) => {
-    const spans = container.querySelectorAll(".loader-digit");
+    const spans = el.querySelectorAll(".loader-digit");
     if (!spans.length) return res();
     const last = spans[spans.length - 1];
     last.addEventListener("animationend", function h() {
-      last.removeEventListener("animationend", h);
-      res();
+      last.removeEventListener("animationend", h); res();
     });
   });
 }
@@ -97,6 +90,7 @@ export function loaderHide() {
   if (!g) { e.wrap.style.cssText = "display:none;pointer-events:none;opacity:0"; return Promise.resolve(); }
   g.set(e.wrap, { display: "none", pointerEvents: "none", autoAlpha: 0 });
   g.set([e.brand, e.progress], { clearProps: "all" });
+  e.wrap.classList.remove("is-exit");
   e.block.style.transition = "";
   e.block.style.transform = "";
   e.block.classList.remove("is-flipping", "is-exiting");
@@ -112,7 +106,6 @@ export async function loaderProgressTo() {
   const steps = seq();
   if (!g) { e.top.innerHTML = digs(100); posY(e, 100); return; }
 
-  // Intro — both fade in together
   g.to(e.brand, { autoAlpha: 1, duration: 0.4, ease: "power2.out" });
   await g.to(e.progress, { autoAlpha: 1, duration: 0.4, ease: "power2.out" });
   await wait(500);
@@ -124,6 +117,7 @@ export async function loaderProgressTo() {
   await flip(e, 100);
   await wait(50);
 
+  // Brand fades + digits stagger out
   g.to(e.brand, { autoAlpha: 0, duration: 0.5, ease: "power2.out" });
   await exit(e);
 }
@@ -132,9 +126,14 @@ export function loaderOutro({ onRevealStart } = {}) {
   const e = dom();
   if (!e) return Promise.resolve();
   if (typeof onRevealStart === "function") onRevealStart();
-  if (window.gsap) return window.gsap.to(e.wrap, { autoAlpha: 0, duration: 0.45, ease: "power1.out" }).then(() => {});
-  e.wrap.style.opacity = "0";
-  return new Promise((r) => setTimeout(r, 500));
+
+  // Clip-path wipe: bottom edge rises to top (expo out via CSS transition)
+  e.wrap.classList.add("is-exit");
+
+  return new Promise((res) => {
+    // Wait for clip-path transition (1s)
+    setTimeout(() => res(), 1050);
+  });
 }
 
 export async function runLoader(duration = 5.0, _container = document, opts = {}) {
