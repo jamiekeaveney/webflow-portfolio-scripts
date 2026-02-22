@@ -1,8 +1,9 @@
 // src/features/loader.js
 //
 // Counter loader  0% → 24% → 72% → 100%
-// One continuous vertical glide. Reel digits change at threshold points.
-// 100% exit: columns stagger upward matching site letter-reveal language.
+// Three stepped Y tweens, back-to-back, no gaps.
+// Reel digits stagger at the start of each step.
+// 100% exit: columns stagger upward.
 
 const DIGITS = {
   h: ["", "", "", "1"],
@@ -11,6 +12,7 @@ const DIGITS = {
   p: ["%", "%", "%", "%"],
 };
 const KEYS = ["h", "t", "o", "p"];
+const STOPS = [0, 0.24, 0.72, 1]; // Y progress at each step
 
 // ── DOM ──
 
@@ -82,24 +84,6 @@ function totalTravel(e) {
   return Math.max(0, innerHeight - pad * 2 - (e.anchor?.offsetHeight || 0));
 }
 
-// Scroll one rail to step index (staggered call, but shared ease/duration)
-function scrollRail(rail, step, g) {
-  if (!rail) return;
-  g.to(rail, {
-    y: -step * cellH(rail),
-    duration: 1.0,
-    ease: "expo.inOut",
-    overwrite: true,
-  });
-}
-
-// Stagger all 4 rails to a step
-function scrollReels(e, step, g) {
-  KEYS.forEach((k, i) => {
-    setTimeout(() => scrollRail(e.rail[k], step, g), i * 90);
-  });
-}
-
 // ── Public API ──
 
 export function loaderShow() {
@@ -139,7 +123,6 @@ export function loaderHide() {
   }
   g.set(e.wrap, { display: "none", pointerEvents: "none", autoAlpha: 0 });
   g.set([e.brand, e.anchor, ...Object.values(e.rail)], { clearProps: "all" });
-  // Reset wins too (the 100% exit moves them)
   e.main?.querySelectorAll(".loader-win").forEach((w) => g.set(w, { clearProps: "all" }));
   return Promise.resolve();
 }
@@ -147,12 +130,18 @@ export function loaderHide() {
 /**
  * Main timeline.
  *
- * ONE continuous Y tween (anchor) from 0 → full travel.
- * Reel changes fire at threshold crossings (24%, 72%, 100%) via onUpdate.
- * No stops, no holds between steps — just one smooth glide.
- * 100% exit: stagger columns up yPercent:-120.
+ * Three Y steps placed back-to-back with ZERO gap:
+ *   Step 1:  Y 0% → 24%,   reels stagger to index 1 (shows "24%")
+ *   Step 2:  Y 24% → 72%,  reels stagger to index 2 (shows "72%")
+ *   Step 3:  Y 72% → 100%, reels stagger to index 3 (shows "100%")
+ *
+ * All use expo.inOut — the deceleration of one step merges smoothly
+ * into the acceleration of the next. No hard stops.
+ *
+ * Reel scrolls share the same ease + duration as the Y tween for that step,
+ * so digits and position land together.
  */
-export function loaderProgressTo(duration = 5.0) {
+export function loaderProgressTo(duration = 4.5) {
   const e = dom();
   if (!e || !window.gsap) {
     if (e) {
@@ -170,6 +159,14 @@ export function loaderProgressTo(duration = 5.0) {
   const g = window.gsap;
   const tl = g.timeline();
   const dist = totalTravel(e);
+  const ease = "expo.inOut";
+  const reelStagger = 0.09;
+
+  // Step durations (proportional to distance travelled)
+  // 0→24 = 24%, 24→72 = 48%, 72→100 = 28%
+  const d1 = duration * 0.28;
+  const d2 = duration * 0.44;
+  const d3 = duration * 0.28;
 
   // ── Intro fade
   tl.to(e.brand, { autoAlpha: 1, duration: 0.4, ease: "power2.out" }, 0);
@@ -178,44 +175,38 @@ export function loaderProgressTo(duration = 5.0) {
   // ── Hold on 0%
   tl.to({}, { duration: 0.35 });
 
-  // ── ONE continuous glide from bottom to top
-  // Reel changes fire at threshold points during this single tween.
-  let firedStep1 = false;
-  let firedStep2 = false;
-  let firedStep3 = false;
-
-  const proxy = { p: 0 };
-
-  tl.to(proxy, {
-    p: 1,
-    duration: duration,
-    ease: "expo.inOut",
-    onUpdate() {
-      // Move anchor
-      e.anchor.style.transform = `translate3d(0,${-dist * proxy.p}px,0)`;
-
-      // Fire reel changes at thresholds
-      if (!firedStep1 && proxy.p >= 0.08) {
-        firedStep1 = true;
-        scrollReels(e, 1, g); // → 24%
-      }
-      if (!firedStep2 && proxy.p >= 0.35) {
-        firedStep2 = true;
-        scrollReels(e, 2, g); // → 72%
-      }
-      if (!firedStep3 && proxy.p >= 0.70) {
-        firedStep3 = true;
-        scrollReels(e, 3, g); // → 100%
-      }
-    },
+  // ── Step 1: 0% → 24%
+  tl.addLabel("s1");
+  tl.to(e.anchor, { y: -dist * STOPS[1], duration: d1, ease }, "s1");
+  KEYS.forEach((k, i) => {
+    const r = e.rail[k];
+    if (!r) return;
+    tl.to(r, { y: -1 * cellH(r), duration: d1, ease }, `s1+=${i * reelStagger}`);
   });
 
-  // ── Brief hold at 100%
-  tl.to({}, { duration: 0.25 });
+  // ── Step 2: 24% → 72%  (starts IMMEDIATELY after step 1 — no gap)
+  tl.addLabel("s2", `s1+=${d1}`);
+  tl.to(e.anchor, { y: -dist * STOPS[2], duration: d2, ease }, "s2");
+  KEYS.forEach((k, i) => {
+    const r = e.rail[k];
+    if (!r) return;
+    tl.to(r, { y: -2 * cellH(r), duration: d2, ease }, `s2+=${i * reelStagger}`);
+  });
 
-  // ── 100% exit: stagger columns up
+  // ── Step 3: 72% → 100%  (starts IMMEDIATELY after step 2)
+  tl.addLabel("s3", `s2+=${d2}`);
+  tl.to(e.anchor, { y: -dist * STOPS[3], duration: d3, ease }, "s3");
+  KEYS.forEach((k, i) => {
+    const r = e.rail[k];
+    if (!r) return;
+    tl.to(r, { y: -3 * cellH(r), duration: d3, ease }, `s3+=${i * reelStagger}`);
+  });
+
+  // ── Hold at 100%
+  tl.to({}, { duration: 0.3 }, `s3+=${d3}`);
+
+  // ── 100% exit: stagger columns upward
   tl.addLabel("exit");
-  const stagger = 0.09;
   KEYS.forEach((k, i) => {
     const win = e.rail[k]?.closest(".loader-win");
     if (!win) return;
@@ -223,7 +214,7 @@ export function loaderProgressTo(duration = 5.0) {
       yPercent: -120,
       duration: 0.75,
       ease: "expo.out",
-    }, `exit+=${i * stagger}`);
+    }, `exit+=${i * reelStagger}`);
   });
 
   tl.to({}, { duration: 0.1 });
@@ -240,7 +231,7 @@ export function loaderOutro({ onRevealStart } = {}) {
   return tl.then(() => {});
 }
 
-export async function runLoader(duration = 5.0, _container = document, opts = {}) {
+export async function runLoader(duration = 4.5, _container = document, opts = {}) {
   await loaderShow();
   await loaderProgressTo(duration);
   await loaderOutro(opts);
