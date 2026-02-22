@@ -1,25 +1,42 @@
 // src/features/loader.js
+//
+// Two-slot flip counter with randomised intermediate values.
+// 0% → ~24±8% → ~72±8% → 100%
+// Y position = exact percentage of vertical travel.
+// 100% exit: digits stagger out, brand fades, then loader hides.
 
-const SEQUENCE = [0, 24, 72, 100];
+// ── Randomised sequence ──
+// Each intermediate value jitters ±8 so it feels organic.
+
+function sequence() {
+  const jitter = (base, range) => base + Math.floor(Math.random() * range * 2) - range;
+  return [0, jitter(24, 8), jitter(72, 8), 100];
+}
+
+// ── DOM ──
 
 function dom() {
   const w = document.querySelector('[data-loader="wrap"]');
   if (!w) return null;
-  const q = (s) => w.querySelector(s);
+  const $ = (s) => w.querySelector(s);
   return {
     wrap: w,
-    panel: q(".loader-panel"),
-    brand: q(".loader-brand"),
-    progress: q("[data-loader-progress]"),
-    block: q("[data-loader-block]"),
-    top: q("[data-loader-top]"),
-    bot: q("[data-loader-bot]"),
+    panel: $(".loader-panel"),
+    brand: $(".loader-brand"),
+    progress: $("[data-loader-progress]"),
+    block: $("[data-loader-block]"),
+    top: $("[data-loader-top]"),
+    bot: $("[data-loader-bot]"),
   };
 }
 
+// ── Helpers ──
+
 function digits(n) {
-  return String(n).split("").concat("%")
-    .map((ch, i) => `<span class="loader-digit" style="--i:${i}">${ch}</span>`)
+  return String(n)
+    .split("")
+    .concat("%")
+    .map((ch, i) => `<span class="loader-digit" style="--d:${i}">${ch}</span>`)
     .join("");
 }
 
@@ -28,9 +45,9 @@ function travel(e) {
   return Math.max(0, innerHeight - pad * 2);
 }
 
-function blockY(e, p) {
-  const px = travel(e) * p;
-  e.block.style.transform = p === 0
+function positionBlock(e, pct) {
+  const px = travel(e) * (pct / 100);
+  e.block.style.transform = pct === 0
     ? "translate3d(0,0,0)"
     : `translate3d(0,calc(0.875em - ${px}px),0)`;
 }
@@ -40,7 +57,11 @@ function lastDigitAnimEnd(container) {
     const spans = container.querySelectorAll(".loader-digit");
     if (!spans.length) return resolve();
     const last = spans[spans.length - 1];
-    last.addEventListener("animationend", resolve, { once: true });
+    function done() {
+      last.removeEventListener("animationend", done);
+      resolve();
+    }
+    last.addEventListener("animationend", done);
   });
 }
 
@@ -48,20 +69,27 @@ function wait(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function flip(e, value, p) {
+// ── Flip in ──
+
+async function flip(e, value) {
   e.bot.innerHTML = digits(value);
   e.block.classList.add("is-flipping");
-  blockY(e, p);
+  // Y position = actual percentage
+  positionBlock(e, value);
   await lastDigitAnimEnd(e.bot);
   e.top.innerHTML = digits(value);
   e.bot.innerHTML = "";
   e.block.classList.remove("is-flipping");
 }
 
-async function exitFlip(e) {
+// ── Flip out (100% exit) ──
+
+async function exit(e) {
   e.block.classList.add("is-exiting");
   await lastDigitAnimEnd(e.top);
-  // Do NOT remove is-exiting or touch innerHTML — prevents flash-back
+  // Clear content so nothing can flash back
+  e.top.innerHTML = "";
+  e.block.classList.remove("is-exiting");
 }
 
 // ── Public API ──
@@ -76,19 +104,25 @@ export function loaderShow() {
 
   if (!g) {
     e.wrap.style.cssText = "display:block;pointer-events:auto;opacity:1";
-    blockY(e, 0);
+    e.brand.style.opacity = "1";
+    e.progress.style.opacity = "1";
+    positionBlock(e, 0);
     return Promise.resolve();
   }
 
-  g.killTweensOf(e.wrap);
+  g.killTweensOf([e.wrap, e.brand, e.progress]);
+  // Loader fully visible, covering everything underneath
   g.set(e.wrap, { display: "block", pointerEvents: "auto", autoAlpha: 1 });
   g.set(e.brand, { autoAlpha: 0 });
   g.set(e.progress, { autoAlpha: 0 });
 
+  // Snap block to start with no transition
   e.block.style.transition = "none";
-  blockY(e, 0);
+  positionBlock(e, 0);
   requestAnimationFrame(() => {
-    requestAnimationFrame(() => { e.block.style.transition = ""; });
+    requestAnimationFrame(() => {
+      e.block.style.transition = "";
+    });
   });
 
   return Promise.resolve();
@@ -104,9 +138,9 @@ export function loaderHide() {
   }
   g.set(e.wrap, { display: "none", pointerEvents: "none", autoAlpha: 0 });
   g.set([e.brand, e.progress], { clearProps: "all" });
-  e.block.classList.remove("is-flipping", "is-exiting");
   e.block.style.transition = "";
   e.block.style.transform = "";
+  e.block.classList.remove("is-flipping", "is-exiting");
   e.top.innerHTML = "";
   e.bot.innerHTML = "";
   return Promise.resolve();
@@ -116,35 +150,36 @@ export async function loaderProgressTo() {
   const e = dom();
   if (!e) return;
   const g = window.gsap;
+  const steps = sequence();
 
   if (!g) {
     e.top.innerHTML = digits(100);
-    blockY(e, 1);
+    positionBlock(e, 100);
     return;
   }
 
-  // Intro fade
-  await g.to(e.brand, { autoAlpha: 1, duration: 0.4, ease: "power2.out" });
-  g.to(e.progress, { autoAlpha: 1, duration: 0.35, ease: "power2.out" });
+  // ── Intro: fade in brand + counter simultaneously
+  g.to(e.brand, { autoAlpha: 1, duration: 0.4, ease: "power2.out" });
+  await g.to(e.progress, { autoAlpha: 1, duration: 0.4, ease: "power2.out" });
 
-  // Hold on 0%
+  // ── Hold on 0%
   await wait(500);
 
-  // 0 → 24
-  await flip(e, 24, 0.24);
-  await wait(100);
+  // ── Step 1
+  await flip(e, steps[1]);
+  await wait(50);
 
-  // 24 → 72
-  await flip(e, 72, 0.72);
-  await wait(100);
+  // ── Step 2
+  await flip(e, steps[2]);
+  await wait(50);
 
-  // 72 → 100
-  await flip(e, 100, 1);
-  await wait(100);
+  // ── Step 3: always 100
+  await flip(e, 100);
+  await wait(50);
 
-  // 100% exit: digits stagger out + brand fades
+  // ── 100% exit: digits stagger out + brand fades
   g.to(e.brand, { autoAlpha: 0, duration: 0.5, ease: "expo.out" });
-  await exitFlip(e);
+  await exit(e);
 }
 
 export function loaderOutro({ onRevealStart } = {}) {
@@ -156,14 +191,14 @@ export function loaderOutro({ onRevealStart } = {}) {
   if (window.gsap) {
     return window.gsap.to(e.wrap, {
       autoAlpha: 0,
-      duration: 0.5,
+      duration: 0.45,
       ease: "power1.out",
     }).then(() => {});
   }
 
   return new Promise((resolve) => {
     e.wrap.style.opacity = "0";
-    setTimeout(resolve, 700);
+    setTimeout(resolve, 500);
   });
 }
 
@@ -174,6 +209,7 @@ export async function runLoader(duration = 5.0, _container = document, opts = {}
   await loaderHide();
 }
 
+// ── Resize ──
 let _raf = null;
 addEventListener("resize", () => {
   const e = dom();
@@ -182,7 +218,7 @@ addEventListener("resize", () => {
   _raf = requestAnimationFrame(() => {
     const num = parseInt(e.top.textContent) || 0;
     e.block.style.transition = "none";
-    blockY(e, num / 100);
+    positionBlock(e, num);
     requestAnimationFrame(() => { e.block.style.transition = ""; });
   });
 });
