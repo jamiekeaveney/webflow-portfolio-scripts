@@ -22,7 +22,6 @@ function digs(n) {
     .join("");
 }
 
-// Y travel from text centre
 function posY(e, pct) {
   const pad = parseFloat(getComputedStyle(e.panel).paddingTop) || 40;
   const bh = e.block.getBoundingClientRect().height;
@@ -66,6 +65,8 @@ export function loaderShow() {
   const g = window.gsap;
   e.top.innerHTML = digs(0);
   e.bot.innerHTML = "";
+  e.wrap.classList.remove("is-exit", "is-rounded");
+
   if (!g) {
     Object.assign(e.wrap.style, { display: "block", pointerEvents: "auto", opacity: "1" });
     e.brand.style.opacity = "1";
@@ -73,6 +74,7 @@ export function loaderShow() {
     posY(e, 0);
     return Promise.resolve();
   }
+
   g.killTweensOf([e.wrap, e.brand, e.progress]);
   g.set(e.wrap, { display: "block", pointerEvents: "auto", autoAlpha: 1 });
   g.set(e.brand, { autoAlpha: 0 });
@@ -80,6 +82,11 @@ export function loaderShow() {
   e.block.style.transition = "none";
   posY(e, 0);
   requestAnimationFrame(() => requestAnimationFrame(() => { e.block.style.transition = ""; }));
+
+  // Pre-position page wrapper for parallax (starts 50vh below)
+  const pw = document.querySelector('[data-barba="container"]');
+  if (pw && g) g.set(pw, { y: "50vh" });
+
   return Promise.resolve();
 }
 
@@ -90,7 +97,7 @@ export function loaderHide() {
   if (!g) { e.wrap.style.cssText = "display:none;pointer-events:none;opacity:0"; return Promise.resolve(); }
   g.set(e.wrap, { display: "none", pointerEvents: "none", autoAlpha: 0 });
   g.set([e.brand, e.progress], { clearProps: "all" });
-  e.wrap.classList.remove("is-exit");
+  e.wrap.classList.remove("is-exit", "is-rounded");
   e.block.style.transition = "";
   e.block.style.transform = "";
   e.block.classList.remove("is-flipping", "is-exiting");
@@ -106,10 +113,11 @@ export async function loaderProgressTo() {
   const steps = seq();
   if (!g) { e.top.innerHTML = digs(100); posY(e, 100); return; }
 
-  g.to(e.brand, { autoAlpha: 1, duration: 0.4, ease: "power2.out" });
-  await g.to(e.progress, { autoAlpha: 1, duration: 0.4, ease: "power2.out" });
-  await wait(500);
+  // Fade in brand + counter together over 500ms, then immediately begin
+  g.to(e.brand, { autoAlpha: 1, duration: 0.5, ease: "power2.out" });
+  await g.to(e.progress, { autoAlpha: 1, duration: 0.5, ease: "power2.out" });
 
+  // Steps — no extra hold, straight into flipping
   await flip(e, steps[1]);
   await wait(50);
   await flip(e, steps[2]);
@@ -125,14 +133,31 @@ export async function loaderProgressTo() {
 export function loaderOutro({ onRevealStart } = {}) {
   const e = dom();
   if (!e) return Promise.resolve();
+  const g = window.gsap;
   if (typeof onRevealStart === "function") onRevealStart();
 
-  // Clip-path wipe: bottom edge rises to top (expo out via CSS transition)
-  e.wrap.classList.add("is-exit");
+  // Step 1: Add rounded corners (0 → 0.75rem over 500ms via CSS transition)
+  e.wrap.classList.add("is-rounded");
 
+  // Step 2: After 250ms, fire the clip-path wipe + page parallax
   return new Promise((res) => {
-    // Wait for clip-path transition (1s)
-    setTimeout(() => res(), 1050);
+    setTimeout(() => {
+      e.wrap.classList.add("is-exit");
+
+      // Parallax: page wrapper rises from 50vh to 0 over the clip-path duration
+      const pw = document.querySelector('[data-barba="container"]');
+      if (pw && g) {
+        g.to(pw, {
+          y: 0,
+          duration: 1,
+          ease: "expo.out",
+          clearProps: "y",
+        });
+      }
+
+      // Wait for clip-path transition to finish (750ms + small buffer)
+      setTimeout(() => res(), 800);
+    }, 250);
   });
 }
 
