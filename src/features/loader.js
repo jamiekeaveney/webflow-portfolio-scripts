@@ -1,9 +1,8 @@
 // src/features/loader.js
 //
 // Counter loader  0% → 24% → 72% → 100%
-// Three stepped Y tweens, back-to-back, no gaps.
-// Reel digits stagger at the start of each step.
-// 100% exit: columns stagger upward.
+// ONE master progress tween drives Y position + reel changes.
+// Feels like one continuous swing between positions.
 
 const DIGITS = {
   h: ["", "", "", "1"],
@@ -12,7 +11,12 @@ const DIGITS = {
   p: ["%", "%", "%", "%"],
 };
 const KEYS = ["h", "t", "o", "p"];
-const STOPS = [0, 0.24, 0.72, 1]; // Y progress at each step
+
+// Progress thresholds where reels change
+// (slightly before the positional midpoint so reels finish as we arrive)
+const THRESHOLDS = [0, 0.02, 0.30, 0.68];
+// Y stops: where the counter should be at each step
+const Y_STOPS = [0, 0.24, 0.72, 1];
 
 // ── DOM ──
 
@@ -73,15 +77,34 @@ function measure(e) {
   });
 }
 
-// ── Helpers ──
-
 function cellH(rail) {
   return rail?.firstElementChild?.getBoundingClientRect().height || 0;
 }
 
-function totalTravel(e) {
+function getTravel(e) {
   const pad = parseFloat(getComputedStyle(e.panel).paddingTop) || 40;
   return Math.max(0, innerHeight - pad * 2 - (e.anchor?.offsetHeight || 0));
+}
+
+// Map a 0→1 master progress to Y position
+// Uses the Y_STOPS to create a piecewise linear mapping:
+//   progress 0.00–0.24 → Y 0%–24%
+//   progress 0.24–0.72 → Y 24%–72%
+//   progress 0.72–1.00 → Y 72%–100%
+function progressToY(p) {
+  if (p <= 0) return 0;
+  if (p >= 1) return 1;
+
+  // Find which segment we're in
+  for (let i = 0; i < Y_STOPS.length - 1; i++) {
+    const lo = Y_STOPS[i];
+    const hi = Y_STOPS[i + 1];
+    if (p <= hi) {
+      const segFrac = (p - lo) / (hi - lo);
+      return lo + (hi - lo) * segFrac;
+    }
+  }
+  return 1;
 }
 
 // ── Public API ──
@@ -128,20 +151,19 @@ export function loaderHide() {
 }
 
 /**
- * Main timeline.
+ * ONE master tween: progress 0→1 over full duration with sine.inOut.
  *
- * Three Y steps placed back-to-back with ZERO gap:
- *   Step 1:  Y 0% → 24%,   reels stagger to index 1 (shows "24%")
- *   Step 2:  Y 24% → 72%,  reels stagger to index 2 (shows "72%")
- *   Step 3:  Y 72% → 100%, reels stagger to index 3 (shows "100%")
+ * On every frame:
+ *   - Anchor Y = progress mapped through Y_STOPS (linear, since the ease is on the master)
+ *   - When progress crosses a threshold, reel scrolls fire with stagger
  *
- * All use expo.inOut — the deceleration of one step merges smoothly
- * into the acceleration of the next. No hard stops.
+ * The reel scroll duration = time remaining until the next threshold
+ * (estimated from the master tween's progress rate), clamped to feel natural.
+ * This means digits finish changing right as we arrive at the position.
  *
- * Reel scrolls share the same ease + duration as the Y tween for that step,
- * so digits and position land together.
+ * sine.inOut gives a gentle, swinging feel — no hard braking.
  */
-export function loaderProgressTo(duration = 4.5) {
+export function loaderProgressTo(duration = 5.0) {
   const e = dom();
   if (!e || !window.gsap) {
     if (e) {
@@ -149,7 +171,7 @@ export function loaderProgressTo(duration = 4.5) {
         const r = e.rail[k];
         if (r) r.style.transform = `translate3d(0,${-3 * cellH(r)}px,0)`;
       });
-      e.anchor.style.transform = `translate3d(0,${-totalTravel(e)}px,0)`;
+      e.anchor.style.transform = `translate3d(0,${-getTravel(e)}px,0)`;
     }
     return Promise.resolve();
   }
@@ -158,52 +180,67 @@ export function loaderProgressTo(duration = 4.5) {
 
   const g = window.gsap;
   const tl = g.timeline();
-  const dist = totalTravel(e);
-  const ease = "expo.inOut";
-  const reelStagger = 0.09;
-
-  // Step durations (proportional to distance travelled)
-  // 0→24 = 24%, 24→72 = 48%, 72→100 = 28%
-  const d1 = duration * 0.28;
-  const d2 = duration * 0.44;
-  const d3 = duration * 0.28;
+  const dist = getTravel(e);
 
   // ── Intro fade
   tl.to(e.brand, { autoAlpha: 1, duration: 0.4, ease: "power2.out" }, 0);
   tl.to(e.anchor, { autoAlpha: 1, duration: 0.35, ease: "power2.out" }, 0.06);
+  tl.to({}, { duration: 0.35 }); // hold on 0%
 
-  // ── Hold on 0%
-  tl.to({}, { duration: 0.35 });
+  // ── Master progress tween
+  const proxy = { p: 0 };
+  let currentStep = 0;
+  const reelStagger = 0.09;
+  const reelEase = "expo.inOut";
 
-  // ── Step 1: 0% → 24%
-  tl.addLabel("s1");
-  tl.to(e.anchor, { y: -dist * STOPS[1], duration: d1, ease }, "s1");
-  KEYS.forEach((k, i) => {
-    const r = e.rail[k];
-    if (!r) return;
-    tl.to(r, { y: -1 * cellH(r), duration: d1, ease }, `s1+=${i * reelStagger}`);
-  });
+  tl.to(proxy, {
+    p: 1,
+    duration,
+    ease: "sine.inOut",
+    onUpdate() {
+      const p = proxy.p;
 
-  // ── Step 2: 24% → 72%  (starts IMMEDIATELY after step 1 — no gap)
-  tl.addLabel("s2", `s1+=${d1}`);
-  tl.to(e.anchor, { y: -dist * STOPS[2], duration: d2, ease }, "s2");
-  KEYS.forEach((k, i) => {
-    const r = e.rail[k];
-    if (!r) return;
-    tl.to(r, { y: -2 * cellH(r), duration: d2, ease }, `s2+=${i * reelStagger}`);
-  });
+      // Y position — direct mapping
+      e.anchor.style.transform = `translate3d(0,${-dist * p}px,0)`;
 
-  // ── Step 3: 72% → 100%  (starts IMMEDIATELY after step 2)
-  tl.addLabel("s3", `s2+=${d2}`);
-  tl.to(e.anchor, { y: -dist * STOPS[3], duration: d3, ease }, "s3");
-  KEYS.forEach((k, i) => {
-    const r = e.rail[k];
-    if (!r) return;
-    tl.to(r, { y: -3 * cellH(r), duration: d3, ease }, `s3+=${i * reelStagger}`);
+      // Check if we've crossed into the next step
+      while (currentStep < 3 && p >= THRESHOLDS[currentStep + 1]) {
+        currentStep++;
+
+        // Estimate time remaining to next threshold (or end)
+        const nextT = currentStep < 3 ? THRESHOLDS[currentStep + 1] : 1;
+        const progressRemaining = nextT - p;
+        // The master tween is eased, so this is approximate — but close enough
+        const timeRemaining = progressRemaining * duration;
+        // Reel duration: enough to finish within the step, min 0.6s, max 1.4s
+        const reelDur = Math.max(0.6, Math.min(1.4, timeRemaining * 0.85));
+
+        // Fire staggered reel scrolls
+        KEYS.forEach((k, i) => {
+          const r = e.rail[k];
+          if (!r) return;
+          g.to(r, {
+            y: -currentStep * cellH(r),
+            duration: reelDur,
+            ease: reelEase,
+            delay: i * reelStagger,
+            overwrite: true,
+          });
+        });
+      }
+    },
+    onComplete() {
+      // Snap everything to final positions
+      KEYS.forEach((k) => {
+        const r = e.rail[k];
+        if (r) g.set(r, { y: -3 * cellH(r) });
+      });
+      g.set(e.anchor, { y: -dist });
+    },
   });
 
   // ── Hold at 100%
-  tl.to({}, { duration: 0.3 }, `s3+=${d3}`);
+  tl.to({}, { duration: 0.3 });
 
   // ── 100% exit: stagger columns upward
   tl.addLabel("exit");
@@ -231,7 +268,7 @@ export function loaderOutro({ onRevealStart } = {}) {
   return tl.then(() => {});
 }
 
-export async function runLoader(duration = 4.5, _container = document, opts = {}) {
+export async function runLoader(duration = 5.0, _container = document, opts = {}) {
   await loaderShow();
   await loaderProgressTo(duration);
   await loaderOutro(opts);
