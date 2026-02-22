@@ -1,39 +1,38 @@
 // src/pages/home.js
 import { initScroll1 } from "../features/scroll-1.js";
 import { initLenisCentre } from "../features/lenis-centre.js";
-import { initLoaderCounter } from "../features/loader-counter.js";
 import { runLoader, loaderHide } from "../features/loader.js";
-import { primeRevealLoad, initRevealLoad } from "../features/reveal-load.js";
 
 export async function initHome(container, ctx) {
   if (!container) return Promise.resolve();
 
-  initLoaderCounter(container);
+  let homeStarted = false;
 
-  // Prime reveal states immediately so nothing flashes underneath loader
-  primeRevealLoad(container, ctx);
+  const startHomeNow = () => {
+    if (homeStarted) return;
+    homeStarted = true;
+
+    // Start homepage systems underneath loader fade
+    initScroll1(container);
+    initLenisCentre(container);
+
+    // If app.js provides this callback, trigger reveal-load here
+    if (ctx && typeof ctx.startLoadReveals === "function") {
+      ctx.startLoadReveals();
+    }
+  };
 
   if (ctx && ctx.isFirstLoad) {
-    let startedHomeReveal = false;
-
     await runLoader(1.5, container, {
-      onRevealStart: () => {
-        if (startedHomeReveal) return;
-        startedHomeReveal = true;
-
-        // Start homepage load reveals under the fading loader
-        initRevealLoad(container, ctx, { skipPrime: true });
-      }
+      onRevealStart: startHomeNow
     });
+
+    // Fallback (in case callback didn’t fire for any reason)
+    startHomeNow();
   } else {
     await loaderHide();
-
-    // Non-first loads: run standard page reveal immediately
-    initRevealLoad(container, ctx, { skipPrime: true });
+    startHomeNow();
   }
-
-  initScroll1(container);
-  initLenisCentre(container);
 
   return Promise.resolve();
 }
