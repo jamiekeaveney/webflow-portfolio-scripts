@@ -1,317 +1,264 @@
 // src/features/loader.js
-// ─── Loader counter animation (0 → 24 → 72 → 100%) ───
-// Counter starts bottom-right, travels up to top-right as progress increases.
-// Reel columns scroll vertically through digit cells (slot-machine style).
+//
+// Counter loader: 0% → 24% → 72% → 100%
+// Anchored bottom-right → rises to top-right with progress.
+// Digit reels scroll vertically (slot-machine style).
+// Everything driven by a single proxy value — reels + Y travel can never desync.
 
-/* ── DOM ── */
-
-function getEls() {
-  const wrap = document.querySelector('[data-loader="wrap"]');
-  if (!wrap) return null;
-  const q = (s) => wrap.querySelector(s);
-  return {
-    wrap,
-    panel:  q(".loader-panel"),
-    brand:  q(".loader-brand"),
-    anchor: q("[data-loader-counter-anchor]"),
-    main:   q("[data-loader-counter-main]"),
-    colH:   q('[data-col="h"]'),
-    colT:   q('[data-col="t"]'),
-    colO:   q('[data-col="o"]'),
-    colP:   q('[data-col="p"]'),
-  };
-}
-
-/* ── Constants ── */
-
-const REELS = {
+const DIGITS = {
   h: ["", "", "", "1"],
   t: ["", "2", "7", "0"],
   o: ["0", "4", "2", "0"],
   p: ["%", "%", "%", "%"],
 };
 
-const EASE = "expo.inOut";
-const EASE_SOFT = "power2.out";
+const COLS = ["h", "t", "o", "p"];
+const STEPS = [0, 0.24, 0.72, 1]; // vertical progress at each counter step
 
-/* ── Reel building ── */
+// ── DOM ──
 
-function buildRail(rail, chars) {
-  if (!rail) return;
-  rail.innerHTML = "";
-  chars.forEach((ch) => {
-    const cell = document.createElement("div");
-    cell.className = "loader-col-cell";
-    if (!ch) {
-      cell.classList.add("loader-col-cell-empty");
-      cell.textContent = "0"; // invisible but preserves metrics
-      cell.setAttribute("aria-hidden", "true");
-    } else {
-      cell.textContent = ch;
-    }
-    rail.appendChild(cell);
-  });
+function query() {
+  const w = document.querySelector('[data-loader="wrap"]');
+  if (!w) return null;
+  const $ = (s) => w.querySelector(s);
+  return {
+    wrap: w,
+    panel: $(".loader-panel"),
+    brand: $(".loader-brand"),
+    anchor: $("[data-loader-counter-anchor]"),
+    main: $("[data-loader-counter-main]"),
+    rails: Object.fromEntries(COLS.map((c) => [c, $(`[data-col="${c}"]`)])),
+  };
 }
 
-function buildReels(els) {
-  Object.entries(REELS).forEach(([key, chars]) => {
-    const col = key === "h" ? els.colH : key === "t" ? els.colT : key === "o" ? els.colO : els.colP;
-    buildRail(col, chars);
-  });
-}
+// ── Build reel cells ──
 
-/* ── Dynamic sizing ──
-   Measures actual rendered glyphs and sizes each window/cell to fit.
-   Eliminates all fixed em guesses — fully font-aware. */
-
-function sizeWindows(els) {
-  if (!els?.main) return;
-
-  els.main.querySelectorAll(".loader-col-window").forEach((win) => {
-    const rail = win.querySelector(".loader-col-rail");
+function populate(e) {
+  COLS.forEach((key) => {
+    const rail = e.rails[key];
     if (!rail) return;
+    rail.innerHTML = "";
+    DIGITS[key].forEach((ch) => {
+      const d = document.createElement("div");
+      d.className = "loader-cell" + (ch ? "" : " loader-cell-blank");
+      d.textContent = ch || "0";
+      rail.appendChild(d);
+    });
+  });
+}
 
-    const cells = Array.from(rail.querySelectorAll(".loader-col-cell"));
+// ── Measure glyphs → size windows to exact px ──
+
+function measure(e) {
+  if (!e.main) return;
+  e.main.querySelectorAll(".loader-win").forEach((win) => {
+    const rail = win.querySelector(".loader-rail");
+    if (!rail) return;
+    const cells = rail.children;
     if (!cells.length) return;
 
-    // Reset so measurements are clean
-    win.style.width = "";
-    win.style.height = "";
+    // Reset
+    win.style.width = win.style.height = "";
     rail.style.width = "";
-    cells.forEach((c) => { c.style.height = ""; c.style.padding = ""; });
+    for (const c of cells) { c.style.height = ""; c.style.padding = ""; }
 
-    // Find widest + tallest glyph
-    let maxW = 0, maxH = 0;
-    cells.forEach((c) => {
+    let mw = 0, mh = 0;
+    for (const c of cells) {
       const r = c.getBoundingClientRect();
-      if (r.width > maxW) maxW = r.width;
-      if (r.height > maxH) maxH = r.height;
-    });
+      if (r.width > mw) mw = r.width;
+      if (r.height > mh) mh = r.height;
+    }
 
-    // Tiny breathing room for anti-aliasing
-    const px = Math.ceil(maxH * 0.05);
-    const py = Math.ceil(maxH * 0.08);
-    const w = Math.ceil(maxW + px * 2);
-    const h = Math.ceil(maxH + py * 2);
+    const w = Math.ceil(mw);
+    const h = Math.ceil(mh);
 
-    win.style.width = `${w}px`;
-    win.style.height = `${h}px`;
-    rail.style.width = `${w}px`;
-
-    cells.forEach((c) => {
-      c.style.height = `${h}px`;
-      c.style.paddingLeft = `${px}px`;
-      c.style.paddingRight = `${px}px`;
-    });
+    win.style.width = w + "px";
+    win.style.height = h + "px";
+    rail.style.width = w + "px";
+    for (const c of cells) c.style.height = h + "px";
   });
 }
 
-/* ── Rail animation helpers ── */
+// ── Helpers ──
 
-function stepH(rail) {
-  const cell = rail?.querySelector(".loader-col-cell");
-  return cell ? cell.getBoundingClientRect().height : 0;
+function cellH(rail) {
+  const c = rail?.querySelector(".loader-cell");
+  return c ? c.getBoundingClientRect().height : 0;
 }
 
-function setRail(rail, idx) {
-  if (!rail) return;
-  rail.style.transform = `translate3d(0,${-idx * stepH(rail)}px,0)`;
+function getTravel(e) {
+  const pad = parseFloat(getComputedStyle(e.panel).paddingTop) || 40;
+  const ah = e.anchor?.getBoundingClientRect().height || 0;
+  return Math.max(0, innerHeight - pad * 2 - ah);
 }
 
-function animRail(rail, idx, delay = 0, dur = 0.95) {
-  if (!rail || !window.gsap) return setRail(rail, idx);
-  window.gsap.to(rail, {
-    y: -idx * stepH(rail),
-    duration: dur,
-    delay,
-    ease: EASE,
-    overwrite: true,
+// Snap all rails + anchor to a final integer step (no fractional drift)
+function snapTo(e, stepIdx, dist) {
+  COLS.forEach((k) => {
+    const rail = e.rails[k];
+    if (rail) rail.style.transform = `translate3d(0,${-stepIdx * cellH(rail)}px,0)`;
   });
+  const p = STEPS[Math.min(stepIdx, 3)];
+  e.anchor.style.transform = `translate3d(0,${-dist * p}px,0)`;
 }
 
-function setStep(els, i, opts = {}) {
-  const { delay = 0, stagger = 0.045, dur = 0.95 } = opts;
-  [els.colH, els.colT, els.colO, els.colP].forEach((col, n) => {
-    animRail(col, i, delay + stagger * n, dur);
-  });
-}
-
-function setStepImmediate(els, i) {
-  [els.colH, els.colT, els.colO, els.colP].forEach((col) => setRail(col, i));
-  if (window.gsap) {
-    window.gsap.set([els.colH, els.colT, els.colO, els.colP], { clearProps: "y" });
-  }
-}
-
-/* ── Vertical travel (anchor moves from bottom → top) ── */
-
-function setYProgress(els, p) {
-  if (!els?.anchor || !els?.panel) return;
-  const pad = parseFloat(getComputedStyle(els.panel).paddingTop) || 40;
-  const travel = Math.max(0, innerHeight - pad * 2 - (els.anchor.getBoundingClientRect().height || 0));
-  const y = -travel * p;
-  if (window.gsap) window.gsap.set(els.anchor, { y });
-  else els.anchor.style.transform = `translate3d(0,${y}px,0)`;
-}
-
-/* ── Public API ── */
+// ── Public API ──
 
 export function loaderShow() {
-  const els = getEls();
-  if (!els) return Promise.resolve();
+  const e = query();
+  if (!e) return Promise.resolve();
+  const g = window.gsap;
 
-  buildReels(els);
+  populate(e);
 
-  if (!window.gsap) {
-    Object.assign(els.wrap.style, { display: "block", pointerEvents: "auto", opacity: "1" });
-    sizeWindows(els);
-    setStepImmediate(els, 0);
-    setYProgress(els, 0);
-    if (els.brand) els.brand.style.opacity = "1";
-    if (els.anchor) els.anchor.style.opacity = "1";
+  if (!g) {
+    e.wrap.style.cssText = "display:block;pointer-events:auto;opacity:1";
+    measure(e);
+    snapTo(e, 0, getTravel(e));
     return Promise.resolve();
   }
 
-  const { gsap } = window;
-  gsap.killTweensOf([els.wrap, els.brand, els.anchor, els.colH, els.colT, els.colO, els.colP]);
-  gsap.set(els.wrap, { display: "block", pointerEvents: "auto", autoAlpha: 1 });
-  gsap.set(els.brand, { autoAlpha: 0, y: 8 });
-  gsap.set(els.anchor, { autoAlpha: 0, y: 0 });
+  g.killTweensOf([e.wrap, e.brand, e.anchor, ...Object.values(e.rails)]);
+  g.set(e.wrap, { display: "block", pointerEvents: "auto", autoAlpha: 1 });
+  g.set(e.brand, { autoAlpha: 0 });
+  g.set(e.anchor, { autoAlpha: 0, y: 0 });
 
-  sizeWindows(els);
-  setStepImmediate(els, 0);
-  setYProgress(els, 0);
+  measure(e);
+  COLS.forEach((k) => { if (e.rails[k]) g.set(e.rails[k], { y: 0 }); });
 
   return Promise.resolve();
 }
 
 export function loaderHide() {
-  const els = getEls();
-  if (!els) return Promise.resolve();
-
-  if (!window.gsap) {
-    Object.assign(els.wrap.style, { display: "none", pointerEvents: "none", opacity: "0" });
+  const e = query();
+  if (!e) return Promise.resolve();
+  const g = window.gsap;
+  if (!g) {
+    e.wrap.style.cssText = "display:none;pointer-events:none;opacity:0";
     return Promise.resolve();
   }
-
-  window.gsap.set(els.wrap, { display: "none", pointerEvents: "none", autoAlpha: 0 });
-  window.gsap.set([els.brand, els.anchor, els.colH, els.colT, els.colO, els.colP], {
-    clearProps: "transform,y,opacity",
-  });
-
+  g.set(e.wrap, { display: "none", pointerEvents: "none", autoAlpha: 0 });
+  g.set([e.brand, e.anchor, ...Object.values(e.rails)], { clearProps: "all" });
   return Promise.resolve();
 }
 
 /**
- * Main progress timeline.
- * Sequence: intro fade → hold 0% → 0→24 → 24→72 → 72→100 → settle stagger → hold
+ * Single unified timeline.
+ *
+ * One proxy float (0→3) drives EVERYTHING:
+ *   - Each column's reel position (with per-column stagger lag for the roll feel)
+ *   - The anchor's vertical Y travel (via STEPS[] interpolation)
+ *
+ * Because both derive from the same value, they can never fall out of sync.
  */
 export function loaderProgressTo(duration = 3.0) {
-  const els = getEls();
-  if (!els) return Promise.resolve();
-
-  if (!window.gsap) {
-    setStepImmediate(els, 3);
-    setYProgress(els, 1);
+  const e = query();
+  if (!e || !window.gsap) {
+    if (e) snapTo(e, 3, getTravel(e));
     return Promise.resolve();
   }
 
-  sizeWindows(els);
+  measure(e);
 
-  const { gsap } = window;
-  const state = { p: 0 };
-  const tl = gsap.timeline();
+  const g = window.gsap;
+  const tl = g.timeline();
+  const dist = getTravel(e);
 
-  // ── Intro fade
-  tl.to(els.brand, { autoAlpha: 1, y: 0, duration: 0.45, ease: EASE_SOFT }, 0);
-  tl.to(els.anchor, { autoAlpha: 1, duration: 0.4, ease: EASE_SOFT }, 0.08);
+  // Column stagger offsets (step units) — creates the rolling feel
+  const LAG = [0, 0.08, 0.16, 0.24];
+
+  const proxy = { s: 0 };
+
+  function apply() {
+    const s = proxy.s;
+    const idx = Math.min(Math.floor(s), 2); // 0, 1, or 2
+    const frac = s - Math.floor(s);
+
+    // Reels — each column lags behind the proxy slightly
+    COLS.forEach((k, i) => {
+      const rail = e.rails[k];
+      if (!rail) return;
+      const h = cellH(rail);
+      const col = Math.max(0, Math.min(3, s - LAG[i]));
+      rail.style.transform = `translate3d(0,${-col * h}px,0)`;
+    });
+
+    // Vertical travel — interpolate between STEPS
+    const lo = STEPS[idx];
+    const hi = STEPS[Math.min(idx + 1, 3)];
+    const p = lo + (hi - lo) * Math.min(frac, 1);
+    e.anchor.style.transform = `translate3d(0,${-dist * p}px,0)`;
+  }
+
+  // ── Intro fade (brand = pure opacity, no slide)
+  tl.to(e.brand, { autoAlpha: 1, duration: 0.4, ease: "power2.out" }, 0);
+  tl.to(e.anchor, { autoAlpha: 1, duration: 0.35, ease: "power2.out" }, 0.06);
 
   // ── Hold on 0%
-  tl.to({}, { duration: 0.6 });
+  tl.to({}, { duration: 0.35 });
 
-  // ── 0 → 24
-  tl.to(state, {
-    p: 0.24,
-    duration: duration * 0.30,
-    ease: EASE,
-    onStart: () => setStep(els, 1),
-    onUpdate: () => setYProgress(els, state.p),
+  // ── Count: 0→1→2→3
+  const ease = "expo.inOut";
+
+  tl.to(proxy, { s: 1, duration: duration * 0.30, ease, onUpdate: apply });
+  tl.to(proxy, { s: 2, duration: duration * 0.38, ease, onUpdate: apply });
+  tl.to(proxy, { s: 3, duration: duration * 0.32, ease, onUpdate: apply,
+    onComplete: () => snapTo(e, 3, dist),
   });
 
-  // Breathing pause
-  tl.to({}, { duration: 0.1 });
+  // ── 100% settle: staggered lift then settle
+  tl.addLabel("settle");
 
-  // ── 24 → 72
-  tl.to(state, {
-    p: 0.72,
-    duration: duration * 0.40,
-    ease: EASE,
-    onStart: () => setStep(els, 2),
-    onUpdate: () => setYProgress(els, state.p),
+  // Clear gsap transforms so we can do the settle relative to final snap positions
+  tl.call(() => {
+    COLS.forEach((k) => {
+      const rail = e.rails[k];
+      if (!rail) return;
+      // Store current visual Y as the "base" for the settle bounce
+      const base = -3 * cellH(rail);
+      g.set(rail, { y: base });
+    });
   });
 
-  tl.to({}, { duration: 0.1 });
-
-  // ── 72 → 100
-  tl.to(state, {
-    p: 1,
-    duration: duration * 0.30,
-    ease: EASE,
-    onStart: () => setStep(els, 3, { dur: 1.0, stagger: 0.05 }),
-    onUpdate: () => setYProgress(els, state.p),
-    onComplete: () => setYProgress(els, 1),
+  COLS.forEach((k, i) => {
+    const rail = e.rails[k];
+    if (!rail) return;
+    tl.to(rail, { y: `-=3`, duration: 0.14, ease: "power2.out" }, `settle+=${i * 0.035}`);
   });
 
-  // ── 100% settle stagger (micro lift + drop)
-  const cols = [els.colH, els.colT, els.colO, els.colP];
-  cols.forEach((col, i) => {
-    tl.to(col, { y: "-=2", duration: 0.18, ease: EASE_SOFT }, `>-0.04+${i * 0.03}`);
-  });
-  tl.to(cols, { y: 0, duration: 0.2, ease: "power2.inOut" }, ">");
+  tl.to(Object.values(e.rails).filter(Boolean), {
+    y: (_, target) => -3 * cellH(target),
+    duration: 0.16,
+    ease: "power2.inOut",
+  }, ">");
 
-  // ── Hold finished state
-  tl.to({}, { duration: 0.25 });
+  // ── Final hold
+  tl.to({}, { duration: 0.2 });
 
   return tl.then(() => {});
 }
 
-/**
- * Fade out the loader overlay.
- * onRevealStart fires just before fade so page content can start animating underneath.
- */
 export function loaderOutro({ onRevealStart } = {}) {
-  const els = getEls();
-  if (!els || !window.gsap) return Promise.resolve();
-
+  const e = query();
+  if (!e || !window.gsap) return Promise.resolve();
   const tl = window.gsap.timeline();
-  tl.call(() => { if (typeof onRevealStart === "function") onRevealStart(); }, [], 0.06);
-  tl.to(els.wrap, { autoAlpha: 0, duration: 0.55, ease: "power1.out" }, 0);
-
+  tl.call(() => { if (typeof onRevealStart === "function") onRevealStart(); }, [], 0.05);
+  tl.to(e.wrap, { autoAlpha: 0, duration: 0.5, ease: "power1.out" }, 0);
   return tl.then(() => {});
 }
 
-export async function runLoader(duration = 3.0, container = document, opts = {}) {
+export async function runLoader(duration = 3.0, _container = document, opts = {}) {
   await loaderShow();
   await loaderProgressTo(duration);
   await loaderOutro(opts);
   await loaderHide();
 }
 
-/* ── Resize safety ── */
+// ── Resize ──
 let _raf = null;
-window.addEventListener("resize", () => {
-  const els = getEls();
-  if (!els?.wrap || els.wrap.style.display === "none") return;
-
+addEventListener("resize", () => {
+  const e = query();
+  if (!e?.wrap || e.wrap.style.display === "none") return;
   if (_raf) cancelAnimationFrame(_raf);
-  _raf = requestAnimationFrame(() => {
-    sizeWindows(els);
-
-    // Re-derive vertical progress from current anchor Y
-    const y = window.gsap ? (Number(window.gsap.getProperty(els.anchor, "y")) || 0) : 0;
-    const pad = parseFloat(getComputedStyle(els.panel).paddingTop) || 40;
-    const travel = Math.max(0, innerHeight - pad * 2 - (els.anchor.getBoundingClientRect().height || 0));
-    const p = travel > 0 ? Math.min(1, Math.max(0, -y / travel)) : 0;
-    setYProgress(els, p);
-  });
+  _raf = requestAnimationFrame(() => measure(e));
 });
