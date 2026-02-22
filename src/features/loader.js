@@ -1,17 +1,37 @@
 // src/features/loader.js
 
-// ------------------------
-// helpers
-// ------------------------
-const pad3 = (num) => `  ${Math.max(0, Math.min(100, Math.round(num)))}`.slice(-3);
+const gsap = () => window.gsap;
+
+let _running = false;
+let _resizeBound = false;
+let _currentProgress = 0;
+
+const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+const pad3 = (num) => `  ${clamp(Math.round(num), 0, 100)}`.slice(-3);
 
 function q(root, sel) {
   return root.querySelector(sel);
+}
+function qa(root, sel) {
+  return Array.from(root.querySelectorAll(sel));
 }
 
 function getDOM() {
   const wrap = document.querySelector('[data-loader="wrap"]');
   if (!wrap) return null;
+
+  const digitClips = qa(wrap, ".loader__digitClip");
+  const digitStacks = qa(wrap, ".loader__digitStack");
+
+  const cols = digitClips.map((clip) => {
+    const stack = q(clip, ".loader__digitStack");
+    return {
+      clip,
+      stack,
+      top: q(clip, "[data-top]"),
+      bot: q(clip, "[data-bot]")
+    };
+  });
 
   return {
     wrap,
@@ -20,167 +40,173 @@ function getDOM() {
     progress: q(wrap, "[data-loader-progress]"),
     block: q(wrap, "[data-loader-block]"),
 
-    digitsClip: q(wrap, "[data-loader-digits-clip]"),
-    digitsStack: q(wrap, "[data-loader-digits-stack]"),
-    rowTop: q(wrap, "[data-loader-row-top]"),
-    rowBot: q(wrap, "[data-loader-row-bot]"),
+    cols,
 
     percentClip: q(wrap, "[data-loader-percent-clip]"),
     percentStack: q(wrap, "[data-loader-percent-stack]"),
 
     measure: q(wrap, "[data-loader-measure]"),
     measureDigits: q(wrap, "[data-loader-measure-digits]"),
+    measureDigit: q(wrap, "[data-loader-measure-digit]"),
     measurePercent: q(wrap, "[data-loader-measure-percent]")
   };
 }
 
-function gsapRef() {
-  return typeof window !== "undefined" ? window.gsap : null;
-}
-
 function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((r) => setTimeout(r, ms));
 }
 
-// ------------------------
-// state
-// ------------------------
-let _running = false;
-let _resizeBound = false;
-let _currentProgress = 0;
-
-// ------------------------
-// precise measurement
-// ------------------------
+/* --------------------------
+   Exact measuring (no guesses)
+--------------------------- */
 function measureAndApply(e) {
-  // Ensure year is current
   if (e.year) e.year.textContent = new Date().getFullYear();
 
-  // Force measurement text
+  // Measure one digit width, total height, and % width using actual font
+  e.measureDigit.textContent = "0";
   e.measureDigits.textContent = "000";
   e.measurePercent.textContent = "%";
 
-  // Read actual glyph boxes
-  const dRect = e.measureDigits.getBoundingClientRect();
-  const pRect = e.measurePercent.getBoundingClientRect();
+  const digitRect = e.measureDigit.getBoundingClientRect();
+  const digitsRect = e.measureDigits.getBoundingClientRect();
+  const percentRect = e.measurePercent.getBoundingClientRect();
 
-  // Use exact rendered height, rounded to avoid fractional drift
-  const lineH = Math.ceil(dRect.height);
-  const digitsW = Math.ceil(dRect.width);
-  const percentW = Math.ceil(pRect.width);
+  const lineH = Math.ceil(digitRect.height);
+  const digitW = Math.ceil(digitsRect.width / 3); // exact per-column width
+  const percentW = Math.ceil(percentRect.width);
 
-  // Apply exact sizing vars
   e.wrap.style.setProperty("--loader-line-h", `${lineH}px`);
-  e.wrap.style.setProperty("--loader-digits-w", `${digitsW}px`);
+  e.wrap.style.setProperty("--loader-digit-w", `${digitW}px`);
   e.wrap.style.setProperty("--loader-percent-w", `${percentW}px`);
 
-  // Make rows exactly lineH and stack exactly two rows
-  [e.rowTop, e.rowBot].forEach((el) => {
-    el.style.height = `${lineH}px`;
-    el.style.lineHeight = `${lineH}px`;
+  // Force exact sizes on rows/clips
+  e.cols.forEach((col) => {
+    col.clip.style.height = `${lineH}px`;
+    col.clip.style.width = `${digitW}px`;
+
+    [col.top, col.bot].forEach((row) => {
+      row.style.height = `${lineH}px`;
+      row.style.lineHeight = `${lineH}px`;
+      row.style.width = `${digitW}px`;
+    });
   });
 
-  e.digitsClip.style.height = `${lineH}px`;
   e.percentClip.style.height = `${lineH}px`;
+  e.percentClip.style.width = `${percentW}px`;
 
-  // Reset stacks to top-visible / bottom-hidden
-  e.digitsStack.style.transform = "translate3d(0,0,0)";
-  e.percentStack.style.transform = "translate3d(0,0,0)";
+  qa(e.percentStack, ".loader__percentRow").forEach((row) => {
+    row.style.height = `${lineH}px`;
+    row.style.lineHeight = `${lineH}px`;
+    row.style.width = `${percentW}px`;
+  });
 
-  return { lineH, digitsW, percentW };
+  return { lineH, digitW, percentW };
 }
 
-// ------------------------
-// travel maths
-// 0% bottom-right -> 100% top-right
-// ------------------------
+/* --------------------------
+   Travel: 0% bottom-right -> 100% top-right
+--------------------------- */
 function getTravelY(e, progress) {
-  const p = Math.max(0, Math.min(100, progress));
-
+  const p = clamp(progress, 0, 100);
   const progressRect = e.progress.getBoundingClientRect();
   const blockRect = e.block.getBoundingClientRect();
 
-  // block y within progress area:
-  // top = 0
-  // bottom = progressHeight - blockHeight
   const maxY = Math.max(0, progressRect.height - blockRect.height);
-  const y = maxY * (1 - p / 100);
-
-  return y;
+  return maxY * (1 - p / 100);
 }
 
-// ------------------------
-// visual setters
-// ------------------------
-function setRows(e, currentNum, incomingNum = currentNum) {
-  e.rowTop.textContent = pad3(currentNum);
-  e.rowBot.textContent = pad3(incomingNum);
+/* --------------------------
+   Digits
+--------------------------- */
+function splitDigits(num) {
+  const s = pad3(num); // "  0", " 24", "100"
+  // Convert spaces to 0 visually for the loader look
+  return s.replace(/ /g, "0").split("");
 }
 
-function setStackOffsets(e, topY = 0, botY = 0) {
-  // We move the whole stack, not individual rows, so stack starts at 0.
-  // Rows are naturally stacked (rowTop then rowBot)
-  e.digitsStack.style.transform = `translate3d(0, ${topY}px, 0)`;
-  e.percentStack.style.transform = `translate3d(0, ${botY}px, 0)`;
+function setTopAndBottomDigits(e, topNum, botNum = topNum) {
+  const topDigits = splitDigits(topNum);
+  const botDigits = splitDigits(botNum);
+
+  e.cols.forEach((col, i) => {
+    col.top.textContent = topDigits[i];
+    col.bot.textContent = botDigits[i];
+  });
 }
 
-// ------------------------
-// exact flip animation (measured)
-// ------------------------
-async function flipTo(e, nextValue, opts = {}) {
-  const g = gsapRef();
-  const lineH = parseFloat(getComputedStyle(e.wrap).getPropertyValue("--loader-line-h")) || e.rowTop.getBoundingClientRect().height;
+function resetStacks(e) {
+  const g = gsap();
+  if (g) {
+    g.set(e.cols.map((c) => c.stack), { y: 0 });
+    g.set(e.percentStack, { y: 0 });
+  } else {
+    e.cols.forEach((c) => (c.stack.style.transform = "translate3d(0,0,0)"));
+    e.percentStack.style.transform = "translate3d(0,0,0)";
+  }
+}
 
-  // Stacks contain [current, next]
-  e.rowBot.textContent = pad3(nextValue);
+/* --------------------------
+   Flip with stagger (simple, chunky)
+--------------------------- */
+async function flipTo(e, nextValue) {
+  const g = gsap();
+  const lineH =
+    parseFloat(getComputedStyle(e.wrap).getPropertyValue("--loader-line-h")) ||
+    e.cols[0].top.getBoundingClientRect().height;
+
+  // Set bottom incoming digits
+  const currentTop = e.cols.map((c) => c.top.textContent).join("");
+  const nextDigits = splitDigits(nextValue);
+
+  e.cols.forEach((col, i) => {
+    col.bot.textContent = nextDigits[i];
+  });
 
   if (!g) {
     // fallback
-    e.rowTop.textContent = pad3(nextValue);
-    e.digitsStack.style.transform = "translate3d(0,0,0)";
-    e.percentStack.style.transform = "translate3d(0,0,0)";
+    setTopAndBottomDigits(e, nextValue, nextValue);
     return;
   }
 
-  const duration = opts.duration ?? 1.4;
-  const ease = opts.ease ?? "expo.inOut";
+  // IMPORTANT: no CSS transitions on these elements, GSAP only
+  // Stagger by place value (ones first feels best)
+  const order = [2, 1, 0]; // ones, tens, hundreds
+  const stacks = order.map((i) => e.cols[i].stack);
 
-  // Reset stack positions
-  g.set([e.digitsStack, e.percentStack], { y: 0 });
-
-  // Animate stack up by exactly one measured line height
   await Promise.all([
     new Promise((resolve) => {
-      g.to(e.digitsStack, {
+      const tl = g.timeline({ onComplete: resolve });
+
+      // digits flip up by exactly one line
+      tl.to(stacks, {
         y: -lineH,
-        duration,
-        ease,
-        onComplete: resolve
-      });
-    }),
-    new Promise((resolve) => {
-      g.to(e.percentStack, {
+        duration: 1.05,
+        ease: "expo.inOut",
+        stagger: 0.06
+      }, 0);
+
+      // % flips with them (tiny delay)
+      tl.to(e.percentStack, {
         y: -lineH,
-        duration,
-        ease,
-        onComplete: resolve
-      });
+        duration: 1.05,
+        ease: "expo.inOut"
+      }, 0.03);
     })
   ]);
 
-  // Promote bottom row to top, reset stacks
-  e.rowTop.textContent = pad3(nextValue);
-  e.rowBot.textContent = pad3(nextValue);
-  g.set([e.digitsStack, e.percentStack], { y: 0 });
+  // promote bottom -> top and reset
+  e.cols.forEach((col) => {
+    col.top.textContent = col.bot.textContent;
+  });
+  resetStacks(e);
 }
 
-// ------------------------
-// progress block movement
-// ------------------------
-function moveBlockTo(e, progress, { duration = 0.8, ease = "sine.inOut" } = {}) {
-  const g = gsapRef();
+/* --------------------------
+   Move progress block
+--------------------------- */
+function moveBlockTo(e, progress, duration = 1.05) {
+  const g = gsap();
   _currentProgress = progress;
-
   const y = getTravelY(e, progress);
 
   if (!g) {
@@ -192,25 +218,24 @@ function moveBlockTo(e, progress, { duration = 0.8, ease = "sine.inOut" } = {}) 
     g.to(e.block, {
       y,
       duration,
-      ease,
+      ease: "expo.inOut",
       onComplete: resolve
     });
   });
 }
 
-// ------------------------
-// visibility API
-// ------------------------
+/* --------------------------
+   Public API
+--------------------------- */
 export async function loaderShow() {
   const e = getDOM();
   if (!e) return;
 
-  const g = gsapRef();
-
+  const g = gsap();
   measureAndApply(e);
 
-  // Initial state
-  setRows(e, 0, 0);
+  setTopAndBottomDigits(e, 0, 0);
+  resetStacks(e);
 
   const y0 = getTravelY(e, 0);
 
@@ -224,12 +249,11 @@ export async function loaderShow() {
     return;
   }
 
-  g.killTweensOf([e.wrap, e.title, e.block, e.digitsStack, e.percentStack]);
-
+  g.killTweensOf([e.wrap, e.title, e.block, ...e.cols.map((c) => c.stack), e.percentStack]);
   g.set(e.wrap, { autoAlpha: 1, visibility: "visible", pointerEvents: "auto" });
   g.set(e.title, { autoAlpha: 0, y: 8 });
   g.set(e.block, { autoAlpha: 0, y: y0 });
-  g.set([e.digitsStack, e.percentStack], { y: 0 });
+  resetStacks(e);
 
   await new Promise((resolve) => {
     const tl = g.timeline({ onComplete: resolve });
@@ -242,7 +266,7 @@ export async function loaderHide() {
   const e = getDOM();
   if (!e) return;
 
-  const g = gsapRef();
+  const g = gsap();
 
   if (!g) {
     e.wrap.style.opacity = "0";
@@ -251,55 +275,22 @@ export async function loaderHide() {
     return;
   }
 
-  g.killTweensOf([e.wrap, e.title, e.block, e.digitsStack, e.percentStack]);
+  g.killTweensOf([e.wrap, e.title, e.block, ...e.cols.map((c) => c.stack), e.percentStack]);
   g.set(e.wrap, { autoAlpha: 0, visibility: "hidden", pointerEvents: "none" });
-  g.set([e.title, e.block, e.digitsStack, e.percentStack], { clearProps: "all" });
-
-  // Keep exact vars (don’t clear measured sizing)
 }
 
-// ------------------------
-// organic chunked fake preload progress
-// ------------------------
-function makeProgressSequence() {
-  // Same spirit as your React version: chunky / organic
-  // We emit values that eventually hit 100.
-  const values = [];
-  let current = 0;
-
-  const checkpoints = [
-    8 + Math.floor(Math.random() * 8),   // ~8-15
-    24 + Math.floor(Math.random() * 10), // ~24-33
-    52 + Math.floor(Math.random() * 12), // ~52-63
-    72 + Math.floor(Math.random() * 10), // ~72-81
-    90 + Math.floor(Math.random() * 6),  // ~90-95
-    100
-  ];
-
-  checkpoints.forEach((target) => {
-    while (current < target) {
-      const step = Math.max(1, Math.floor(Math.random() * 8)); // 1-7
-      let next = Math.min(target, current + step);
-
-      // organic jitter except endpoints
-      if (next !== 0 && next !== 100) {
-        next = Math.max(current + 1, Math.min(99, next - 2 + Math.round(4 * Math.random())));
-      }
-
-      if (next > current) {
-        values.push(next);
-        current = next;
-      }
-    }
-  });
-
-  if (values[values.length - 1] !== 100) values.push(100);
-  return values;
+/* --------------------------
+   Chunked progress sequence (not 1% ticking)
+   You can tweak this to mimic Richard:
+   e.g. [0, 24, 72, 100]
+--------------------------- */
+function buildChunkSequence() {
+  // slight variation while staying chunky
+  const a = 20 + Math.round(Math.random() * 8);  // 20-28
+  const b = 68 + Math.round(Math.random() * 12); // 68-80
+  return [0, a, b, 100];
 }
 
-// ------------------------
-// main run
-// ------------------------
 export async function runLoader(totalDuration = 4.8, _container = document, opts = {}) {
   if (_running) return;
   _running = true;
@@ -310,51 +301,45 @@ export async function runLoader(totalDuration = 4.8, _container = document, opts
     return;
   }
 
-  const g = gsapRef();
+  const g = gsap();
 
   await loaderShow();
 
-  // Re-measure after visible (important for exact glyph dimensions)
+  // Re-measure once visible (fonts/layout final)
   measureAndApply(e);
 
-  // Build a sequence that fills totalDuration
-  const sequence = makeProgressSequence();
-  const steps = sequence.length;
-  const perStep = Math.max(220, Math.floor((totalDuration * 1000) / Math.max(steps, 1)));
+  const seq = buildChunkSequence(); // [0, ~24, ~72, 100]
+  const stepDuration = 1.05;
+  const gapDuration = 0.24;
 
-  let visibleValue = 0;
-  setRows(e, 0, 0);
+  // Start at 0 (already visible)
+  setTopAndBottomDigits(e, 0, 0);
+  await moveBlockTo(e, 0, 0.01);
 
-  for (let i = 0; i < sequence.length; i++) {
-    const next = sequence[i];
-    const isLast = next === 100;
+  // Add a small intro pause like the original
+  await wait(450);
 
-    // Move and flip in parallel
+  // Chunked jumps only
+  for (let i = 1; i < seq.length; i++) {
+    const target = seq[i];
+
+    // move + flip together
     await Promise.all([
-      moveBlockTo(e, next, {
-        duration: Math.min(1.4, perStep / 1000),
-        ease: isLast ? "expo.inOut" : "sine.inOut"
-      }),
-      flipTo(e, next, {
-        duration: 1.4, // matches the feel from your source
-        ease: "expo.inOut"
-      })
+      moveBlockTo(e, target, stepDuration),
+      flipTo(e, target)
     ]);
 
-    visibleValue = next;
-
-    // tiny hold between chunks
-    if (!isLast) {
-      await wait(120);
+    if (target !== 100) {
+      await wait(gapDuration * 1000);
     }
   }
 
-  // Let page reveals start before wipe
+  // Optional callback hook
   if (typeof opts.onRevealStart === "function") {
     opts.onRevealStart();
   }
 
-  // Wipe/fade out (same idea as your React wipeOut + hide)
+  // Wipe / hide
   e.wrap.classList.add("wipeOut");
 
   if (g) {
@@ -369,7 +354,6 @@ export async function runLoader(totalDuration = 4.8, _container = document, opts
     });
   } else {
     await wait(900);
-    e.wrap.style.opacity = "0";
   }
 
   e.wrap.classList.remove("wipeOut");
@@ -378,26 +362,22 @@ export async function runLoader(totalDuration = 4.8, _container = document, opts
   _running = false;
 }
 
-// ------------------------
-// resize handling (re-measure + keep progress position exact)
-// ------------------------
+/* --------------------------
+   Resize: re-measure + maintain exact position
+--------------------------- */
 function onResize() {
   const e = getDOM();
   if (!e) return;
 
-  const isVisible = getComputedStyle(e.wrap).visibility !== "hidden";
-  if (!isVisible) return;
+  const visible = getComputedStyle(e.wrap).visibility !== "hidden";
+  if (!visible) return;
 
   measureAndApply(e);
 
   const y = getTravelY(e, _currentProgress);
-  const g = gsapRef();
-
-  if (g) {
-    g.set(e.block, { y });
-  } else {
-    e.block.style.transform = `translate3d(0, ${y}px, 0)`;
-  }
+  const g = gsap();
+  if (g) g.set(e.block, { y });
+  else e.block.style.transform = `translate3d(0, ${y}px, 0)`;
 }
 
 if (typeof window !== "undefined" && !_resizeBound) {
