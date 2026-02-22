@@ -2,6 +2,7 @@
 //
 // Two-slot flip counter: 0% → 24% → 72% → 100%
 // Individual digit spans stagger via CSS animation-delay (--i index).
+// 100% exit: digits stagger out upward, brand fades out.
 
 const SEQUENCE = [0, 24, 72, 100];
 
@@ -24,7 +25,6 @@ function dom() {
 
 // ── Helpers ──
 
-// Build digit spans with --i index for stagger: "24%" → 3 spans with --i:0,1,2
 function digitSpans(n) {
   const chars = String(n).split("").concat("%");
   return chars
@@ -47,7 +47,6 @@ function setBlockY(e, progress01) {
   }
 }
 
-// Wait for the LAST span's animation to end (it has the highest delay)
 function onLastSpanAnimEnd(container) {
   return new Promise((resolve) => {
     const spans = container.querySelectorAll("span");
@@ -65,25 +64,24 @@ function wait(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// ── Flip ──
+// ── Flip in (number change) ──
 
 async function flip(e, nextValue, progress01) {
-  // Set next value with indexed spans
   e.bot.innerHTML = digitSpans(nextValue);
-
-  // Trigger staggered flip animation
   e.block.classList.add("is-flipping");
-
-  // Update vertical position (CSS transition handles smooth movement)
   setBlockY(e, progress01);
-
-  // Wait for the last digit's animation to complete
   await onLastSpanAnimEnd(e.bot);
-
-  // Swap: new value becomes current, clear next, remove flip
   e.top.innerHTML = digitSpans(nextValue);
   e.bot.innerHTML = "";
   e.block.classList.remove("is-flipping");
+}
+
+// ── Flip out (100% exit — digits stagger upward and away) ──
+
+async function exitFlip(e) {
+  e.block.classList.add("is-exiting");
+  await onLastSpanAnimEnd(e.top);
+  e.block.classList.remove("is-exiting");
 }
 
 // ── Public API ──
@@ -107,7 +105,6 @@ export function loaderShow() {
   g.set(e.brand, { autoAlpha: 0 });
   g.set(e.progress, { autoAlpha: 0 });
 
-  // Snap to start (no transition)
   e.block.style.transition = "none";
   setBlockY(e, 0);
   requestAnimationFrame(() => {
@@ -131,7 +128,7 @@ export function loaderHide() {
   g.set([e.brand, e.progress], { clearProps: "all" });
   e.block.style.transition = "";
   e.block.style.transform = "";
-  e.block.classList.remove("is-flipping");
+  e.block.classList.remove("is-flipping", "is-exiting");
   return Promise.resolve();
 }
 
@@ -154,17 +151,21 @@ export async function loaderProgressTo(_duration = 5.0) {
   // ── Hold on 0%
   await wait(500);
 
-  // ── Flip 0→24 + travel
+  // ── Flip 0→24
   await flip(e, 24, 0.24);
   await wait(400);
 
-  // ── Flip 24→72 + travel
+  // ── Flip 24→72
   await flip(e, 72, 0.72);
   await wait(300);
 
-  // ── Flip 72→100 + travel
+  // ── Flip 72→100
   await flip(e, 100, 1);
   await wait(400);
+
+  // ── 100% exit: digits stagger out + brand fades
+  g.to(e.brand, { autoAlpha: 0, duration: 0.5, ease: "expo.out" });
+  await exitFlip(e);
 }
 
 export function loaderOutro({ onRevealStart } = {}) {
@@ -173,8 +174,16 @@ export function loaderOutro({ onRevealStart } = {}) {
 
   if (typeof onRevealStart === "function") onRevealStart();
 
-  e.wrap.classList.add("is-wipe");
+  // Fade out the entire loader
+  if (window.gsap) {
+    return window.gsap.to(e.wrap, {
+      autoAlpha: 0,
+      duration: 0.5,
+      ease: "power1.out",
+    }).then(() => {});
+  }
 
+  e.wrap.classList.add("is-wipe");
   return new Promise((resolve) => {
     setTimeout(() => {
       e.wrap.classList.add("is-hidden");
