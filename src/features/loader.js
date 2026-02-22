@@ -1,386 +1,358 @@
 // src/features/loader.js
+// Loader sequence: 0% -> 24% -> 72% -> 100%
+// 0% starts bottom-right, 100% ends top-right.
+// Requires global loader markup with:
+// [data-loader="wrap"], .loader-panel, .loader-brand,
+// [data-loader-progress], [data-loader-block],
+// [data-loader-val-top], [data-loader-val-bot]
 
-const gsap = () => window.gsap;
+const STEPS = [24, 72, 100];
 
-let _running = false;
-let _resizeBound = false;
-let _currentProgress = 0;
+// -------------------------
+// DOM helpers
+// -------------------------
+function dom(scope = document) {
+  const wrap =
+    document.querySelector('[data-loader="wrap"]') ||
+    scope.querySelector?.('[data-loader="wrap"]');
 
-const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
-const pad3 = (num) => `  ${clamp(Math.round(num), 0, 100)}`.slice(-3);
-
-function q(root, sel) {
-  return root.querySelector(sel);
-}
-function qa(root, sel) {
-  return Array.from(root.querySelectorAll(sel));
-}
-
-function getDOM() {
-  const wrap = document.querySelector('[data-loader="wrap"]');
   if (!wrap) return null;
-
-  const digitClips = qa(wrap, ".loader__digitClip");
-  const digitStacks = qa(wrap, ".loader__digitStack");
-
-  const cols = digitClips.map((clip) => {
-    const stack = q(clip, ".loader__digitStack");
-    return {
-      clip,
-      stack,
-      top: q(clip, "[data-top]"),
-      bot: q(clip, "[data-bot]")
-    };
-  });
 
   return {
     wrap,
-    title: q(wrap, "[data-loader-title]"),
-    year: q(wrap, "[data-loader-year]"),
-    progress: q(wrap, "[data-loader-progress]"),
-    block: q(wrap, "[data-loader-block]"),
-
-    cols,
-
-    percentClip: q(wrap, "[data-loader-percent-clip]"),
-    percentStack: q(wrap, "[data-loader-percent-stack]"),
-
-    measure: q(wrap, "[data-loader-measure]"),
-    measureDigits: q(wrap, "[data-loader-measure-digits]"),
-    measureDigit: q(wrap, "[data-loader-measure-digit]"),
-    measurePercent: q(wrap, "[data-loader-measure-percent]")
+    panel: wrap.querySelector(".loader-panel"),
+    brand: wrap.querySelector(".loader-brand"),
+    progress: wrap.querySelector("[data-loader-progress]"),
+    block: wrap.querySelector("[data-loader-block]"),
+    valTop: wrap.querySelector("[data-loader-val-top]"),
+    valBot: wrap.querySelector("[data-loader-val-bot]")
   };
 }
 
+function hasGSAP() {
+  return typeof window !== "undefined" && !!window.gsap;
+}
+
+function fmt(n) {
+  return `${Math.round(n)}%`;
+}
+
 function wait(ms) {
-  return new Promise((r) => setTimeout(r, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/* --------------------------
-   Exact measuring (no guesses)
---------------------------- */
-function measureAndApply(e) {
-  if (e.year) e.year.textContent = new Date().getFullYear();
+// -------------------------
+// Travel maths
+// -------------------------
+// Returns the Y offset (in px) for the progress block.
+// 0% = bottom, 100% = top.
+function calcY(e, progress) {
+  if (!e?.panel || !e?.block) return 0;
 
-  // Measure one digit width, total height, and % width using actual font
-  e.measureDigit.textContent = "0";
-  e.measureDigits.textContent = "000";
-  e.measurePercent.textContent = "%";
+  const panelRect = e.panel.getBoundingClientRect();
+  const panelH = panelRect.height || window.innerHeight;
 
-  const digitRect = e.measureDigit.getBoundingClientRect();
-  const digitsRect = e.measureDigits.getBoundingClientRect();
-  const percentRect = e.measurePercent.getBoundingClientRect();
+  const styles = getComputedStyle(e.panel);
+  const padTop = parseFloat(styles.paddingTop) || 0;
+  const padBottom = parseFloat(styles.paddingBottom) || 0;
 
-  const lineH = Math.ceil(digitRect.height);
-  const digitW = Math.ceil(digitsRect.width / 3); // exact per-column width
-  const percentW = Math.ceil(percentRect.width);
+  const blockH = e.block.offsetHeight || 0;
 
-  e.wrap.style.setProperty("--loader-line-h", `${lineH}px`);
-  e.wrap.style.setProperty("--loader-digit-w", `${digitW}px`);
-  e.wrap.style.setProperty("--loader-percent-w", `${percentW}px`);
+  // block y=0 is top aligned to panel content box
+  const travel = Math.max(0, panelH - padTop - padBottom - blockH);
 
-  // Force exact sizes on rows/clips
-  e.cols.forEach((col) => {
-    col.clip.style.height = `${lineH}px`;
-    col.clip.style.width = `${digitW}px`;
-
-    [col.top, col.bot].forEach((row) => {
-      row.style.height = `${lineH}px`;
-      row.style.lineHeight = `${lineH}px`;
-      row.style.width = `${digitW}px`;
-    });
-  });
-
-  e.percentClip.style.height = `${lineH}px`;
-  e.percentClip.style.width = `${percentW}px`;
-
-  qa(e.percentStack, ".loader__percentRow").forEach((row) => {
-    row.style.height = `${lineH}px`;
-    row.style.lineHeight = `${lineH}px`;
-    row.style.width = `${percentW}px`;
-  });
-
-  return { lineH, digitW, percentW };
+  // 0% => bottom (travel), 100% => top (0)
+  return travel * (1 - progress / 100);
 }
 
-/* --------------------------
-   Travel: 0% bottom-right -> 100% top-right
---------------------------- */
-function getTravelY(e, progress) {
-  const p = clamp(progress, 0, 100);
-  const progressRect = e.progress.getBoundingClientRect();
-  const blockRect = e.block.getBoundingClientRect();
+// -------------------------
+// Flip helpers
+// -------------------------
+function resetFlipSlots(e, g, value = 0) {
+  e.valTop.textContent = fmt(value);
+  e.valBot.textContent = fmt(value);
 
-  const maxY = Math.max(0, progressRect.height - blockRect.height);
-  return maxY * (1 - p / 100);
-}
-
-/* --------------------------
-   Digits
---------------------------- */
-function splitDigits(num) {
-  const s = pad3(num); // "  0", " 24", "100"
-  // Convert spaces to 0 visually for the loader look
-  return s.replace(/ /g, "0").split("");
-}
-
-function setTopAndBottomDigits(e, topNum, botNum = topNum) {
-  const topDigits = splitDigits(topNum);
-  const botDigits = splitDigits(botNum);
-
-  e.cols.forEach((col, i) => {
-    col.top.textContent = topDigits[i];
-    col.bot.textContent = botDigits[i];
-  });
-}
-
-function resetStacks(e) {
-  const g = gsap();
   if (g) {
-    g.set(e.cols.map((c) => c.stack), { y: 0 });
-    g.set(e.percentStack, { y: 0 });
+    // top visible, bottom below (hidden by overflow)
+    g.set(e.valTop, { yPercent: 0 });
+    g.set(e.valBot, { yPercent: 100 });
   } else {
-    e.cols.forEach((c) => (c.stack.style.transform = "translate3d(0,0,0)"));
-    e.percentStack.style.transform = "translate3d(0,0,0)";
+    e.valTop.style.transform = "translate3d(0,0%,0)";
+    e.valBot.style.transform = "translate3d(0,100%,0)";
   }
 }
 
-/* --------------------------
-   Flip with stagger (simple, chunky)
---------------------------- */
-async function flipTo(e, nextValue) {
-  const g = gsap();
-  const lineH =
-    parseFloat(getComputedStyle(e.wrap).getPropertyValue("--loader-line-h")) ||
-    e.cols[0].top.getBoundingClientRect().height;
-
-  // Set bottom incoming digits
-  const currentTop = e.cols.map((c) => c.top.textContent).join("");
-  const nextDigits = splitDigits(nextValue);
-
-  e.cols.forEach((col, i) => {
-    col.bot.textContent = nextDigits[i];
-  });
+function flipTo(e, nextValue, duration = 0.8) {
+  const g = hasGSAP() ? window.gsap : null;
 
   if (!g) {
-    // fallback
-    setTopAndBottomDigits(e, nextValue, nextValue);
-    return;
-  }
-
-  // IMPORTANT: no CSS transitions on these elements, GSAP only
-  // Stagger by place value (ones first feels best)
-  const order = [2, 1, 0]; // ones, tens, hundreds
-  const stacks = order.map((i) => e.cols[i].stack);
-
-  await Promise.all([
-    new Promise((resolve) => {
-      const tl = g.timeline({ onComplete: resolve });
-
-      // digits flip up by exactly one line
-      tl.to(stacks, {
-        y: -lineH,
-        duration: 1.05,
-        ease: "expo.inOut",
-        stagger: 0.06
-      }, 0);
-
-      // % flips with them (tiny delay)
-      tl.to(e.percentStack, {
-        y: -lineH,
-        duration: 1.05,
-        ease: "expo.inOut"
-      }, 0.03);
-    })
-  ]);
-
-  // promote bottom -> top and reset
-  e.cols.forEach((col) => {
-    col.top.textContent = col.bot.textContent;
-  });
-  resetStacks(e);
-}
-
-/* --------------------------
-   Move progress block
---------------------------- */
-function moveBlockTo(e, progress, duration = 1.05) {
-  const g = gsap();
-  _currentProgress = progress;
-  const y = getTravelY(e, progress);
-
-  if (!g) {
-    e.block.style.transform = `translate3d(0, ${y}px, 0)`;
+    e.valTop.textContent = fmt(nextValue);
     return Promise.resolve();
   }
 
   return new Promise((resolve) => {
-    g.to(e.block, {
-      y,
+    // incoming text sits below
+    e.valBot.textContent = fmt(nextValue);
+    g.set(e.valBot, { yPercent: 100 });
+
+    const ease = "expo.inOut";
+
+    // animate both upward together
+    g.to(e.valTop, {
+      yPercent: -100,
       duration,
-      ease: "expo.inOut",
+      ease
+    });
+
+    g.to(e.valBot, {
+      yPercent: 0,
+      duration,
+      ease,
+      onComplete: () => {
+        // promote bottom to top/current
+        e.valTop.textContent = fmt(nextValue);
+        g.set(e.valTop, { yPercent: 0 });
+        g.set(e.valBot, { yPercent: 100 });
+        resolve();
+      }
+    });
+  });
+}
+
+function flipOut(e, duration = 0.65) {
+  const g = hasGSAP() ? window.gsap : null;
+
+  if (!g) return Promise.resolve();
+
+  return new Promise((resolve) => {
+    g.to(e.valTop, {
+      yPercent: -120,
+      duration,
+      ease: "expo.out",
       onComplete: resolve
     });
   });
 }
 
-/* --------------------------
-   Public API
---------------------------- */
-export async function loaderShow() {
-  const e = getDOM();
-  if (!e) return;
+// -------------------------
+// Public visibility API
+// -------------------------
+export function loaderShow() {
+  const e = dom();
+  if (!e) return Promise.resolve();
 
-  const g = gsap();
-  measureAndApply(e);
+  const g = hasGSAP() ? window.gsap : null;
 
-  setTopAndBottomDigits(e, 0, 0);
-  resetStacks(e);
-
-  const y0 = getTravelY(e, 0);
-
-  if (!g) {
-    e.wrap.style.visibility = "visible";
-    e.wrap.style.pointerEvents = "auto";
-    e.wrap.style.opacity = "1";
-    e.title.style.opacity = "1";
-    e.block.style.opacity = "1";
-    e.block.style.transform = `translate3d(0, ${y0}px, 0)`;
-    return;
+  // reset content
+  if (g) {
+    g.killTweensOf([e.wrap, e.brand, e.block, e.valTop, e.valBot]);
   }
 
-  g.killTweensOf([e.wrap, e.title, e.block, ...e.cols.map((c) => c.stack), e.percentStack]);
-  g.set(e.wrap, { autoAlpha: 1, visibility: "visible", pointerEvents: "auto" });
-  g.set(e.title, { autoAlpha: 0, y: 8 });
-  g.set(e.block, { autoAlpha: 0, y: y0 });
-  resetStacks(e);
+  resetFlipSlots(e, g, 0);
 
-  await new Promise((resolve) => {
-    const tl = g.timeline({ onComplete: resolve });
-    tl.to(e.title, { autoAlpha: 1, y: 0, duration: 0.35, ease: "power2.out" }, 0);
-    tl.to(e.block, { autoAlpha: 1, duration: 0.25, ease: "none" }, 0.05);
+  const y0 = calcY(e, 0);
+
+  if (!g) {
+    e.wrap.style.opacity = "1";
+    e.wrap.style.visibility = "visible";
+    e.wrap.style.pointerEvents = "auto";
+    e.brand.style.opacity = "1";
+    e.block.style.opacity = "1";
+    e.block.style.transform = `translate3d(0, ${y0}px, 0)`;
+    return Promise.resolve();
+  }
+
+  g.set(e.wrap, {
+    autoAlpha: 1,
+    visibility: "visible",
+    pointerEvents: "auto"
   });
+
+  g.set(e.brand, { autoAlpha: 0, y: 8 });
+  g.set(e.block, { autoAlpha: 0, x: 0, y: y0 });
+
+  const tl = g.timeline();
+  tl.to(e.brand, {
+    autoAlpha: 1,
+    y: 0,
+    duration: 0.35,
+    ease: "power2.out"
+  }, 0);
+
+  tl.to(e.block, {
+    autoAlpha: 1,
+    duration: 0.25,
+    ease: "none"
+  }, 0.06);
+
+  return tl.then(() => {});
 }
 
-export async function loaderHide() {
-  const e = getDOM();
-  if (!e) return;
+export function loaderHide() {
+  const e = dom();
+  if (!e) return Promise.resolve();
 
-  const g = gsap();
+  const g = hasGSAP() ? window.gsap : null;
 
   if (!g) {
     e.wrap.style.opacity = "0";
     e.wrap.style.visibility = "hidden";
     e.wrap.style.pointerEvents = "none";
-    return;
+    return Promise.resolve();
   }
 
-  g.killTweensOf([e.wrap, e.title, e.block, ...e.cols.map((c) => c.stack), e.percentStack]);
-  g.set(e.wrap, { autoAlpha: 0, visibility: "hidden", pointerEvents: "none" });
+  g.killTweensOf([e.wrap, e.brand, e.block, e.valTop, e.valBot]);
+
+  g.set(e.wrap, {
+    autoAlpha: 0,
+    visibility: "hidden",
+    pointerEvents: "none"
+  });
+
+  // Keep transforms clean for next run
+  g.set([e.brand, e.block, e.valTop, e.valBot], { clearProps: "all" });
+
+  return Promise.resolve();
 }
 
-/* --------------------------
-   Chunked progress sequence (not 1% ticking)
-   You can tweak this to mimic Richard:
-   e.g. [0, 24, 72, 100]
---------------------------- */
-function buildChunkSequence() {
-  // slight variation while staying chunky
-  const a = 20 + Math.round(Math.random() * 8);  // 20-28
-  const b = 68 + Math.round(Math.random() * 12); // 68-80
-  return [0, a, b, 100];
+// -------------------------
+// Progress animation
+// -------------------------
+export function loaderProgressTo(totalDuration = 4.8) {
+  const e = dom();
+  if (!e) return Promise.resolve();
+
+  const g = hasGSAP() ? window.gsap : null;
+
+  if (!g) {
+    e.valTop.textContent = "100%";
+    e.block.style.transform = `translate3d(0, ${calcY(e, 100)}px, 0)`;
+    return Promise.resolve();
+  }
+
+  // durations weighted by distance:
+  // 0→24 (24), 24→72 (48), 72→100 (28)
+  const d1 = totalDuration * 0.24;
+  const d2 = totalDuration * 0.48;
+  const d3 = totalDuration * 0.28;
+
+  const tl = g.timeline();
+
+  // hold 0 briefly
+  tl.to({}, { duration: 0.25 });
+
+  // 0 -> 24
+  tl.addLabel("s1");
+  tl.to(e.block, {
+    y: calcY(e, 24),
+    duration: d1,
+    ease: "sine.inOut"
+  }, "s1");
+  tl.call(() => flipTo(e, 24, d1), [], "s1");
+
+  // 24 -> 72
+  tl.addLabel("s2");
+  tl.to(e.block, {
+    y: calcY(e, 72),
+    duration: d2,
+    ease: "sine.inOut"
+  }, "s2");
+  tl.call(() => flipTo(e, 72, d2), [], "s2");
+
+  // 72 -> 100
+  tl.addLabel("s3");
+  tl.to(e.block, {
+    y: calcY(e, 100),
+    duration: d3,
+    ease: "sine.inOut"
+  }, "s3");
+  tl.call(() => flipTo(e, 100, d3), [], "s3");
+
+  // hold at 100
+  tl.to({}, { duration: 0.2 });
+
+  return tl.then(() => {});
 }
 
+// -------------------------
+// Outro (fade loader out + trigger page reveals)
+// -------------------------
+export function loaderOutro({ onRevealStart } = {}) {
+  const e = dom();
+  if (!e) return Promise.resolve();
+
+  const g = hasGSAP() ? window.gsap : null;
+
+  if (!g) {
+    if (typeof onRevealStart === "function") onRevealStart();
+    e.wrap.style.opacity = "0";
+    return Promise.resolve();
+  }
+
+  const tl = g.timeline();
+
+  tl.call(() => {
+    if (typeof onRevealStart === "function") onRevealStart();
+  }, [], 0.05);
+
+  // Optional: flip 100% out before fade
+  tl.call(() => flipOut(e, 0.55), [], 0);
+
+  tl.to([e.brand, e.block], {
+    autoAlpha: 0,
+    duration: 0.35,
+    ease: "power2.out"
+  }, 0.12);
+
+  tl.to(e.wrap, {
+    autoAlpha: 0,
+    duration: 0.45,
+    ease: "power2.inOut"
+  }, 0.18);
+
+  return tl.then(() => {});
+}
+
+// -------------------------
+// Main API used by home.js
+// -------------------------
 export async function runLoader(totalDuration = 4.8, _container = document, opts = {}) {
-  if (_running) return;
-  _running = true;
-
-  const e = getDOM();
-  if (!e) {
-    _running = false;
-    return;
-  }
-
-  const g = gsap();
-
   await loaderShow();
-
-  // Re-measure once visible (fonts/layout final)
-  measureAndApply(e);
-
-  const seq = buildChunkSequence(); // [0, ~24, ~72, 100]
-  const stepDuration = 1.05;
-  const gapDuration = 0.24;
-
-  // Start at 0 (already visible)
-  setTopAndBottomDigits(e, 0, 0);
-  await moveBlockTo(e, 0, 0.01);
-
-  // Add a small intro pause like the original
-  await wait(450);
-
-  // Chunked jumps only
-  for (let i = 1; i < seq.length; i++) {
-    const target = seq[i];
-
-    // move + flip together
-    await Promise.all([
-      moveBlockTo(e, target, stepDuration),
-      flipTo(e, target)
-    ]);
-
-    if (target !== 100) {
-      await wait(gapDuration * 1000);
-    }
-  }
-
-  // Optional callback hook
-  if (typeof opts.onRevealStart === "function") {
-    opts.onRevealStart();
-  }
-
-  // Wipe / hide
-  e.wrap.classList.add("wipeOut");
-
-  if (g) {
-    await new Promise((resolve) => {
-      g.to(e.wrap, {
-        autoAlpha: 0,
-        duration: 0.7,
-        ease: "power2.inOut",
-        delay: 0.2,
-        onComplete: resolve
-      });
-    });
-  } else {
-    await wait(900);
-  }
-
-  e.wrap.classList.remove("wipeOut");
+  await loaderProgressTo(totalDuration);
+  await loaderOutro(opts);
   await loaderHide();
-
-  _running = false;
 }
 
-/* --------------------------
-   Resize: re-measure + maintain exact position
---------------------------- */
+// -------------------------
+// Keep correct Y on resize while visible
+// -------------------------
+let _resizeRaf = 0;
+
 function onResize() {
-  const e = getDOM();
-  if (!e) return;
+  const e = dom();
+  if (!e?.wrap) return;
 
-  const visible = getComputedStyle(e.wrap).visibility !== "hidden";
-  if (!visible) return;
+  const wrapVisible =
+    getComputedStyle(e.wrap).visibility !== "hidden" &&
+    getComputedStyle(e.wrap).opacity !== "0";
 
-  measureAndApply(e);
+  if (!wrapVisible) return;
 
-  const y = getTravelY(e, _currentProgress);
-  const g = gsap();
-  if (g) g.set(e.block, { y });
-  else e.block.style.transform = `translate3d(0, ${y}px, 0)`;
+  cancelAnimationFrame(_resizeRaf);
+  _resizeRaf = requestAnimationFrame(() => {
+    const text = (e.valTop.textContent || "0%").replace("%", "");
+    const num = Number(text) || 0;
+    const y = calcY(e, num);
+
+    const g = hasGSAP() ? window.gsap : null;
+    if (g) {
+      g.set(e.block, { y });
+    } else {
+      e.block.style.transform = `translate3d(0, ${y}px, 0)`;
+    }
+  });
 }
 
-if (typeof window !== "undefined" && !_resizeBound) {
+if (typeof window !== "undefined") {
   window.addEventListener("resize", onResize);
-  _resizeBound = true;
 }
