@@ -1,14 +1,7 @@
 // src/features/loader.js
 //
 // Two-slot flip counter: 0% → 24% → 72% → 100%
-//
-// Follows the richardekwonye.com reference exactly:
-//   - .loader-block is overflow:hidden, height = 1 line (0.875em)
-//   - Current value at top:0, next value at top:0.875em (below, hidden)
-//   - Flip = CSS animation moves both up by 0.875em
-//   - Vertical travel = CSS transition on block transform
-//   - Block transform: translate3d(0, calc(0.875em - Xpx), 0)
-//     where X = progress * viewportTravel
+// Individual digit spans stagger via CSS animation-delay (--i index).
 
 const SEQUENCE = [0, 24, 72, 100];
 
@@ -31,30 +24,15 @@ function dom() {
 
 // ── Helpers ──
 
-// Split a number into digit spans: 24 → "<span>2</span><span>4</span><span>%</span>"
+// Build digit spans with --i index for stagger: "24%" → 3 spans with --i:0,1,2
 function digitSpans(n) {
-  return String(n)
-    .split("")
-    .map((d) => `<span>${d}</span>`)
-    .concat("<span>%</span>")
+  const chars = String(n).split("").concat("%");
+  return chars
+    .map((ch, i) => `<span style="--i:${i}">${ch}</span>`)
     .join("");
 }
 
-// The block travel uses the same formula as the reference:
-// translate3d(0, calc(0.875em - Xpx), 0)
-// At progress=0: X=0, so transform = translate3d(0, 0.875em, 0) — but we start at 0
-// At progress=1: X = full viewport travel
-//
-// Actually looking more carefully at the reference: at 100% the transform is
-// calc(0.875em - 701px). The 701px ≈ viewport height - padding.
-// This means at 0% the block is at bottom (transform: translate3d(0,0,0))
-// and at 100% it's at translate3d(0, calc(0.875em - ~700px), 0) = way up top.
-//
-// The 0.875em offset is so the NEXT value (which sits at top:0.875em) ends up
-// visible at the very top of the viewport area.
-
 function getTravel(e) {
-  // Full travel = viewport - top padding - bottom padding
   const pad = parseFloat(getComputedStyle(e.panel).paddingTop) || 40;
   return Math.max(0, innerHeight - pad * 2);
 }
@@ -62,9 +40,6 @@ function getTravel(e) {
 function setBlockY(e, progress01) {
   const travel = getTravel(e);
   const px = travel * progress01;
-  // Match reference formula: calc(0.875em - Xpx)
-  // At progress 0: just "0" (no movement)
-  // At progress > 0: moves up
   if (progress01 === 0) {
     e.block.style.transform = "translate3d(0, 0, 0)";
   } else {
@@ -72,44 +47,40 @@ function setBlockY(e, progress01) {
   }
 }
 
-// Promise that resolves after a CSS animation ends on an element
-function onAnimEnd(el) {
+// Wait for the LAST span's animation to end (it has the highest delay)
+function onLastSpanAnimEnd(container) {
   return new Promise((resolve) => {
+    const spans = container.querySelectorAll("span");
+    if (!spans.length) return resolve();
+    const last = spans[spans.length - 1];
     const handler = () => {
-      el.removeEventListener("animationend", handler);
+      last.removeEventListener("animationend", handler);
       resolve();
     };
-    el.addEventListener("animationend", handler);
+    last.addEventListener("animationend", handler);
   });
 }
 
-// Wait ms
 function wait(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// ── Flip sequence ──
-// 1. Set next value text in bot slot
-// 2. Add is-flipping class → CSS animation moves both up
-// 3. Wait for animation to end
-// 4. Update top slot text to the new value
-// 5. Remove is-flipping class (resets positions)
-// 6. Update block translateY for the new progress position
+// ── Flip ──
 
 async function flip(e, nextValue, progress01) {
-  // Set the incoming value
+  // Set next value with indexed spans
   e.bot.innerHTML = digitSpans(nextValue);
 
-  // Trigger flip animation
+  // Trigger staggered flip animation
   e.block.classList.add("is-flipping");
 
-  // Update vertical position (CSS transition handles the smooth movement)
+  // Update vertical position (CSS transition handles smooth movement)
   setBlockY(e, progress01);
 
-  // Wait for the flip animation to complete
-  await onAnimEnd(e.bot);
+  // Wait for the last digit's animation to complete
+  await onLastSpanAnimEnd(e.bot);
 
-  // Swap: put new value in top, clear bot, remove flip class
+  // Swap: new value becomes current, clear next, remove flip
   e.top.innerHTML = digitSpans(nextValue);
   e.bot.innerHTML = "";
   e.block.classList.remove("is-flipping");
@@ -122,7 +93,6 @@ export function loaderShow() {
   if (!e) return Promise.resolve();
   const g = window.gsap;
 
-  // Set initial state
   e.top.innerHTML = digitSpans(0);
   e.bot.innerHTML = "";
 
@@ -137,11 +107,9 @@ export function loaderShow() {
   g.set(e.brand, { autoAlpha: 0 });
   g.set(e.progress, { autoAlpha: 0 });
 
-  // Disable CSS transition initially so the block snaps to start position
+  // Snap to start (no transition)
   e.block.style.transition = "none";
   setBlockY(e, 0);
-
-  // Re-enable transition after a frame
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       e.block.style.transition = "";
@@ -167,21 +135,6 @@ export function loaderHide() {
   return Promise.resolve();
 }
 
-/**
- * Main sequence:
- *   1. Fade in brand + counter
- *   2. Hold on 0% briefly
- *   3. Flip 0→24 + travel to 24% position
- *   4. Short pause
- *   5. Flip 24→72 + travel to 72% position
- *   6. Short pause
- *   7. Flip 72→100 + travel to 100% position
- *   8. Hold at 100%
- *
- * The flips are CSS-animation driven (smooth, hardware-accelerated).
- * The vertical travel is CSS-transition driven (1.25s cubic-bezier).
- * JS just orchestrates the timing.
- */
 export async function loaderProgressTo(_duration = 5.0) {
   const e = dom();
   if (!e) return;
@@ -201,22 +154,16 @@ export async function loaderProgressTo(_duration = 5.0) {
   // ── Hold on 0%
   await wait(500);
 
-  // ── Step 1: 0% → 24%
+  // ── Flip 0→24 + travel
   await flip(e, 24, 0.24);
-
-  // ── Pause (let the user register the number)
   await wait(400);
 
-  // ── Step 2: 24% → 72%
+  // ── Flip 24→72 + travel
   await flip(e, 72, 0.72);
-
-  // ── Pause
   await wait(300);
 
-  // ── Step 3: 72% → 100%
+  // ── Flip 72→100 + travel
   await flip(e, 100, 1);
-
-  // ── Hold at 100%
   await wait(400);
 }
 
@@ -226,7 +173,6 @@ export function loaderOutro({ onRevealStart } = {}) {
 
   if (typeof onRevealStart === "function") onRevealStart();
 
-  // Use CSS class-based wipe (like the reference)
   e.wrap.classList.add("is-wipe");
 
   return new Promise((resolve) => {
@@ -252,7 +198,6 @@ addEventListener("resize", () => {
   if (_raf) cancelAnimationFrame(_raf);
   _raf = requestAnimationFrame(() => {
     const num = parseInt(e.top.textContent) || 0;
-    // Temporarily disable transition for instant repositioning
     e.block.style.transition = "none";
     setBlockY(e, num / 100);
     requestAnimationFrame(() => {
