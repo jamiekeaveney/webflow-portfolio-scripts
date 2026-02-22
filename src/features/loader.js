@@ -1,188 +1,263 @@
-(function () {
-  const loaderWrap = document.querySelector(".loader-wrap");
-  const loaderPad = document.querySelector(".loader-pad");
-  const loaderMeta = document.querySelector(".loader-meta");
-  const counterAnchor = document.querySelector(".loader-counter-anchor");
-  const counterPos = document.querySelector(".loader-counter-pos");
-  const numberSlot = document.querySelector(".loader-number-slot");
+function getLoaderEls() {
+  const wrap = document.querySelector('[data-loader="wrap"]');
+  if (!wrap) return null;
 
-  if (!loaderWrap || !loaderPad || !counterAnchor || !counterPos || !numberSlot) return;
+  return {
+    wrap,
+    stage: wrap.querySelector(".loader-stage") || wrap,
+    shell: wrap.querySelector(".loader-shell"),
+    counterAnchor: wrap.querySelector(".loader-counter-anchor"),
+    counterClip: wrap.querySelector(".loader-counter-clip"),
+    layerA: wrap.querySelector(".loader-counter-layer-a"),
+    layerB: wrap.querySelector(".loader-counter-layer-b")
+  };
+}
 
-  const steps = [
-    { value: 0, progress: 0.00, hold: 0.45 },
-    { value: 24, progress: 0.24, hold: 0.55 },
-    { value: 72, progress: 0.72, hold: 0.60 },
-    { value: 100, progress: 1.00, hold: 0.55 }
-  ];
+const EASE_OUT = "expo.out";
+const EASE_IN_OUT = "expo.inOut";
 
-  const staggerStep = 0.06;
-  const enterDur = 0.9;
-  const leaveDur = 0.8;
+const LOADER_STEPS = [
+  { value: 0, progress: 0.0 },
+  { value: 24, progress: 0.24 },
+  { value: 72, progress: 0.72 },
+  { value: 100, progress: 1.0 }
+];
 
-  let currentNode = null;
-  let travelRem = 0;
+const DIGIT_STAGGER = 0.035;
+const DIGIT_DUR = 0.8;
+const OUTRO_DUR = 0.5;
 
-  function pxToRem(px) {
-    const rootSize = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-    return px / rootSize;
+function formatCounter(value) {
+  return `${value}%`;
+}
+
+function makeCounterHTML(text) {
+  const chars = text.split("");
+  return chars
+    .map((char) => {
+      const isPercent = char === "%";
+      const cls = isPercent
+        ? "loader-counter-char loader-counter-percent"
+        : "loader-counter-char";
+      const safe = char === " " ? "&nbsp;" : char;
+      return `<span class="${cls}">${safe}</span>`;
+    })
+    .join("");
+}
+
+function setLayerText(layer, text) {
+  if (!layer) return [];
+  layer.innerHTML = makeCounterHTML(text);
+  return Array.from(layer.querySelectorAll(".loader-counter-char"));
+}
+
+function getTravelY(els) {
+  if (!els || !els.counterAnchor || !els.counterClip || !els.wrap) return 0;
+
+  const wrapRect = els.wrap.getBoundingClientRect();
+  const clipRect = els.counterClip.getBoundingClientRect();
+
+  const style = window.getComputedStyle(els.shell || els.wrap);
+  const topPad = parseFloat(style.paddingTop) || 40;
+  const bottomPad = parseFloat(style.paddingBottom) || 40;
+
+  const available = wrapRect.height - topPad - bottomPad - clipRect.height;
+  return Math.max(0, available);
+}
+
+function setCounterVertical(els, progress) {
+  if (!window.gsap || !els?.counterAnchor) return;
+  const travel = getTravelY(els);
+  const y = -travel * Math.max(0, Math.min(1, progress));
+  window.gsap.set(els.counterAnchor, { y });
+}
+
+function tweenCounterVertical(tl, els, fromProgress, toProgress, duration, at, ease = EASE_OUT) {
+  if (!els?.counterAnchor) return;
+
+  const proxy = { p: fromProgress };
+  tl.to(proxy, {
+    p: toProgress,
+    duration,
+    ease,
+    onUpdate: () => setCounterVertical(els, proxy.p)
+  }, at);
+}
+
+function animateCounterSwap(tl, fromLayer, toLayer, nextValue, at) {
+  const nextChars = setLayerText(toLayer, formatCounter(nextValue));
+  const fromChars = fromLayer ? Array.from(fromLayer.querySelectorAll(".loader-counter-char")) : [];
+
+  if (window.gsap) {
+    window.gsap.set(toLayer, { autoAlpha: 1 });
+    window.gsap.set(nextChars, { yPercent: 120 });
+    window.gsap.set(fromLayer, { autoAlpha: 1 });
+    window.gsap.set(fromChars, { yPercent: 0 });
   }
 
-  function measureTravel() {
-    const laneRect = counterAnchor.getBoundingClientRect();
-    const rowRect = counterPos.getBoundingClientRect();
-    const travelPx = Math.max(0, laneRect.height - rowRect.height);
-    travelRem = pxToRem(travelPx);
+  // old out + new in (same "split" feeling)
+  if (fromChars.length) {
+    tl.to(fromChars, {
+      yPercent: -120,
+      duration: DIGIT_DUR,
+      ease: EASE_OUT,
+      stagger: { each: DIGIT_STAGGER, from: "start" }
+    }, at);
   }
 
-  function setCounterVertical(progress) {
-    const yRem = -(travelRem * progress);
-    counterPos.style.transform = `translateY(${yRem}rem)`;
+  if (nextChars.length) {
+    tl.to(nextChars, {
+      yPercent: 0,
+      duration: DIGIT_DUR,
+      ease: EASE_OUT,
+      stagger: { each: DIGIT_STAGGER, from: "start" }
+    }, at);
   }
 
-  function charClassFor(char) {
-    if (char === "1") return "loader-char loader-char-tight";
-    if (char === "0") return "loader-char loader-char-wide";
-    return "loader-char";
+  // hide old layer after swap completes
+  tl.set(fromLayer, { autoAlpha: 0 }, at + DIGIT_DUR + 0.05);
+}
+
+export function loaderShow() {
+  const els = getLoaderEls();
+  if (!els) return Promise.resolve();
+
+  if (!window.gsap) {
+    els.wrap.style.display = "block";
+    els.wrap.style.pointerEvents = "auto";
+    els.wrap.style.opacity = "1";
+    return Promise.resolve();
   }
 
-  function makeNumberNode(value) {
-    const node = document.createElement("div");
-    node.className = "loader-number";
-    const text = String(value);
+  window.gsap.killTweensOf([
+    els.wrap,
+    els.counterAnchor,
+    els.layerA,
+    els.layerB
+  ]);
 
-    for (let i = 0; i < text.length; i += 1) {
-      const char = text[i];
-      const span = document.createElement("span");
-      span.className = charClassFor(char) + " loader-enter";
-      span.textContent = char;
-      node.appendChild(span);
-    }
+  // Initial visible number = 0%
+  setLayerText(els.layerA, formatCounter(0));
+  setLayerText(els.layerB, "");
 
-    return node;
+  window.gsap.set(els.wrap, {
+    display: "block",
+    pointerEvents: "auto",
+    autoAlpha: 1
+  });
+
+  window.gsap.set(els.layerA, { autoAlpha: 1 });
+  window.gsap.set(els.layerB, { autoAlpha: 0 });
+
+  const charsA = Array.from(els.layerA.querySelectorAll(".loader-counter-char"));
+  window.gsap.set(charsA, { yPercent: 0 });
+
+  setCounterVertical(els, 0);
+
+  return Promise.resolve();
+}
+
+export function loaderHide() {
+  const els = getLoaderEls();
+  if (!els) return Promise.resolve();
+
+  if (!window.gsap) {
+    els.wrap.style.display = "none";
+    els.wrap.style.pointerEvents = "none";
+    els.wrap.style.opacity = "0";
+    return Promise.resolve();
   }
 
-  function getChars(node) {
-    return Array.from(node.children);
-  }
+  window.gsap.set(els.wrap, {
+    autoAlpha: 0,
+    display: "none",
+    pointerEvents: "none"
+  });
 
-  function animateIn(node) {
-    const chars = getChars(node);
+  window.gsap.set(els.counterAnchor, { clearProps: "transform" });
+  window.gsap.set([els.layerA, els.layerB], { clearProps: "opacity,visibility" });
 
-    chars.forEach((char, i) => {
-      const delay = i * staggerStep;
-      char.style.transitionDelay = `${delay}s`;
-    });
+  return Promise.resolve();
+}
 
-    requestAnimationFrame(() => {
-      chars.forEach((char) => {
-        char.classList.add("loader-enter-active");
-      });
-    });
+export function loaderProgressTo(duration = 1.5) {
+  const els = getLoaderEls();
+  if (!els || !window.gsap) return Promise.resolve();
 
-    const total = enterDur + (Math.max(chars.length - 1, 0) * staggerStep);
-    return wait(total);
-  }
+  const tl = window.gsap.timeline();
 
-  function animateOut(node) {
-    const chars = getChars(node);
+  // Timing split:
+  // 0 -> 24 (nice intro)
+  // 24 -> 72 (main progress)
+  // 72 -> 100 (finish)
+  const d1 = duration * 0.34;
+  const d2 = duration * 0.40;
+  const d3 = duration * 0.26;
 
-    chars.forEach((char, i) => {
-      const delay = i * staggerStep;
-      char.classList.remove("loader-enter-active");
-      char.classList.remove("loader-enter");
-      char.classList.add("loader-leave");
-      char.style.transitionDelay = `${delay}s`;
-    });
+  // Start state already shows 0%
+  // Move 0 -> 24
+  animateCounterSwap(tl, els.layerA, els.layerB, 24, 0.00);
+  tweenCounterVertical(tl, els, 0.00, 0.24, d1, 0.00, EASE_OUT);
 
-    requestAnimationFrame(() => {
-      chars.forEach((char) => {
-        char.classList.add("loader-leave-active");
-      });
-    });
+  // Move 24 -> 72
+  animateCounterSwap(tl, els.layerB, els.layerA, 72, d1);
+  tweenCounterVertical(tl, els, 0.24, 0.72, d2, d1, EASE_OUT);
 
-    const total = leaveDur + (Math.max(chars.length - 1, 0) * staggerStep);
-    return wait(total);
-  }
+  // Move 72 -> 100
+  animateCounterSwap(tl, els.layerA, els.layerB, 100, d1 + d2);
+  tweenCounterVertical(tl, els, 0.72, 1.00, d3, d1 + d2, EASE_IN_OUT);
 
-  function wait(seconds) {
-    return new Promise((resolve) => {
-      window.setTimeout(resolve, seconds * 1000);
-    });
-  }
+  // final visible layer should be B (100%)
+  tl.set(els.layerA, { autoAlpha: 0 }, d1 + d2 + d3 + 0.01);
+  tl.set(els.layerB, { autoAlpha: 1 }, d1 + d2 + d3 + 0.01);
 
-  async function swapNumber(nextValue) {
-    const nextNode = makeNumberNode(nextValue);
-    numberSlot.appendChild(nextNode);
+  return tl.then(() => {});
+}
 
-    await animateIn(nextNode);
+/**
+ * Fade loader out.
+ * onRevealStart fires at the same moment the fade starts,
+ * so your homepage reveal anims become visible immediately.
+ */
+export function loaderOutro({ onRevealStart } = {}) {
+  const els = getLoaderEls();
+  if (!els || !window.gsap) return Promise.resolve();
 
-    if (currentNode) {
-      await animateOut(currentNode);
-      currentNode.remove();
-    }
+  const tl = window.gsap.timeline();
+  let fired = false;
 
-    currentNode = nextNode;
-  }
+  const fireReveal = () => {
+    if (fired) return;
+    fired = true;
+    if (typeof onRevealStart === "function") onRevealStart();
+  };
 
-  async function runLoaderSequence() {
-    loaderWrap.classList.add("is-visible");
-    loaderMeta.classList.add("loader-fade-meta");
+  // Counter exits only at 100
+  const activeLayer = window.getComputedStyle(els.layerB).opacity !== "0" ? els.layerB : els.layerA;
+  const activeChars = Array.from(activeLayer.querySelectorAll(".loader-counter-char"));
 
-    measureTravel();
-    setCounterVertical(0);
+  tl.to(activeChars, {
+    yPercent: -120,
+    duration: 0.9,
+    ease: EASE_OUT,
+    stagger: { each: DIGIT_STAGGER, from: "start" }
+  }, 0);
 
-    window.addEventListener("resize", handleResize, { passive: true });
+  // Start homepage reveal exactly when loader starts fading
+  tl.call(fireReveal, [], 0.08);
 
-    for (let i = 0; i < steps.length; i += 1) {
-      const step = steps[i];
-      const isFirst = i === 0;
+  tl.to(els.wrap, {
+    autoAlpha: 0,
+    duration: OUTRO_DUR,
+    ease: "none"
+  }, 0.08);
 
-      setCounterVertical(step.progress);
+  return tl.then(() => {});
+}
 
-      if (isFirst) {
-        const firstNode = makeNumberNode(step.value);
-        numberSlot.appendChild(firstNode);
-        currentNode = firstNode;
-        await animateIn(firstNode);
-      } else {
-        await swapNumber(step.value);
-      }
-
-      await wait(step.hold);
-    }
-
-    // Trigger homepage reveal exactly when loader begins fading
-    window.dispatchEvent(new CustomEvent("loader:reveal-start"));
-
-    loaderMeta.classList.add("loader-fade-meta-out");
-    counterPos.style.transition = "opacity 0.45s ease, transform 0.45s ease";
-    counterPos.style.opacity = "0";
-
-    loaderWrap.classList.remove("is-visible");
-
-    await wait(0.5);
-
-    loaderWrap.classList.add("loader-hidden");
-    loaderWrap.style.display = "none";
-
-    window.dispatchEvent(new CustomEvent("loader:done"));
-    window.removeEventListener("resize", handleResize);
-  }
-
-  function handleResize() {
-    measureTravel();
-
-    // keep position aligned to current visible number if resizing mid-loader
-    if (!currentNode) return;
-
-    const text = currentNode.textContent || "0";
-    let progress = 0;
-    if (text === "24") progress = 0.24;
-    if (text === "72") progress = 0.72;
-    if (text === "100") progress = 1;
-    setCounterVertical(progress);
-  }
-
-  // Run immediately (or call runLoaderSequence() manually in your app flow)
-  runLoaderSequence();
-})();
+export async function runLoader(duration = 1.5, container = document, opts = {}) {
+  await loaderShow();
+  await loaderProgressTo(duration, container);
+  await loaderOutro(opts);
+  await loaderHide();
+}

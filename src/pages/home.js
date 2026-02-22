@@ -16,7 +16,7 @@ export async function initHome(container, ctx) {
     initScroll1(container);
     initLenisCentre(container);
 
-    // If app.js provides this callback, trigger reveal-load here
+    // Trigger reveal-load immediately when loader fade starts
     if (ctx && typeof ctx.startLoadReveals === "function") {
       ctx.startLoadReveals();
     }
@@ -27,7 +27,7 @@ export async function initHome(container, ctx) {
       onRevealStart: startHomeNow
     });
 
-    // Fallback (in case callback didn’t fire for any reason)
+    // Fallback safety
     startHomeNow();
   } else {
     await loaderHide();
