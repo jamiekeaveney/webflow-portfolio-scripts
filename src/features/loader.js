@@ -4,141 +4,146 @@ function getLoaderEls() {
 
   return {
     wrap,
-    stage: wrap.querySelector(".loader-stage") || wrap,
-    shell: wrap.querySelector(".loader-shell"),
-    counterAnchor: wrap.querySelector(".loader-counter-anchor"),
-    counterClip: wrap.querySelector(".loader-counter-clip"),
-    layerA: wrap.querySelector(".loader-counter-layer-a"),
-    layerB: wrap.querySelector(".loader-counter-layer-b")
+    panel: wrap.querySelector(".loader-panel"),
+    anchor: wrap.querySelector("[data-loader-counter-anchor]"),
+    counterMain: wrap.querySelector("[data-loader-counter-main]"),
+    colH: wrap.querySelector('[data-col="h"]'),
+    colT: wrap.querySelector('[data-col="t"]'),
+    colO: wrap.querySelector('[data-col="o"]'),
+    colP: wrap.querySelector('[data-col="p"]')
   };
 }
 
+const LOADER_VALUES = [0, 24, 72, 100];
 const EASE_OUT = "expo.out";
 const EASE_IN_OUT = "expo.inOut";
 
-const LOADER_STEPS = [
-  { value: 0, progress: 0.0 },
-  { value: 24, progress: 0.24 },
-  { value: 72, progress: 0.72 },
-  { value: 100, progress: 1.0 }
-];
+/* Column reels for 0, 24, 72, 100 */
+const REELS = {
+  h: ["", "", "", "1"],   // hundreds
+  t: ["", "2", "7", "0"], // tens
+  o: ["0", "4", "2", "0"],// ones
+  p: ["%", "%", "%", "%"] // symbol
+};
 
-const DIGIT_STAGGER = 0.035;
-const DIGIT_DUR = 0.8;
-const OUTRO_DUR = 0.5;
+function buildRail(rail, chars) {
+  if (!rail) return;
+  rail.innerHTML = "";
 
-function formatCounter(value) {
-  return `${value}%`;
+  for (let i = 0; i < chars.length; i += 1) {
+    const cell = document.createElement("div");
+    cell.className = "loader-col-cell";
+
+    const value = chars[i];
+    if (!value) {
+      cell.classList.add("loader-col-cell-empty");
+      cell.textContent = "0"; // preserves exact height metrics
+    } else {
+      cell.textContent = value;
+    }
+
+    rail.appendChild(cell);
+  }
 }
 
-function makeCounterHTML(text) {
-  const chars = text.split("");
-  return chars
-    .map((char) => {
-      const isPercent = char === "%";
-      const cls = isPercent
-        ? "loader-counter-char loader-counter-percent"
-        : "loader-counter-char";
-      const safe = char === " " ? "&nbsp;" : char;
-      return `<span class="${cls}">${safe}</span>`;
-    })
-    .join("");
+function buildCounterReels(els) {
+  buildRail(els.colH, REELS.h);
+  buildRail(els.colT, REELS.t);
+  buildRail(els.colO, REELS.o);
+  buildRail(els.colP, REELS.p);
 }
 
-function setLayerText(layer, text) {
-  if (!layer) return [];
-  layer.innerHTML = makeCounterHTML(text);
-  return Array.from(layer.querySelectorAll(".loader-counter-char"));
+function getCellHeight(els) {
+  if (!els?.counterMain) return 0;
+  const cell = els.counterMain.querySelector(".loader-col-cell");
+  return cell ? cell.getBoundingClientRect().height : 0;
 }
 
-function getTravelY(els) {
-  if (!els || !els.counterAnchor || !els.counterClip || !els.wrap) return 0;
-
-  const wrapRect = els.wrap.getBoundingClientRect();
-  const clipRect = els.counterClip.getBoundingClientRect();
-
-  const style = window.getComputedStyle(els.shell || els.wrap);
-  const topPad = parseFloat(style.paddingTop) || 40;
-  const bottomPad = parseFloat(style.paddingBottom) || 40;
-
-  const available = wrapRect.height - topPad - bottomPad - clipRect.height;
-  return Math.max(0, available);
+function setRailIndex(rail, index) {
+  if (!rail) return;
+  const cell = rail.querySelector(".loader-col-cell");
+  if (!cell) return;
+  const h = cell.getBoundingClientRect().height;
+  rail.style.transform = `translate3d(0, ${-index * h}px, 0)`;
 }
 
-function setCounterVertical(els, progress) {
-  if (!window.gsap || !els?.counterAnchor) return;
-  const travel = getTravelY(els);
-  const y = -travel * Math.max(0, Math.min(1, progress));
-  window.gsap.set(els.counterAnchor, { y });
+function animateRailTo(rail, index, delay = 0) {
+  if (!rail || !window.gsap) {
+    setRailIndex(rail, index);
+    return;
+  }
+
+  const cell = rail.querySelector(".loader-col-cell");
+  if (!cell) return;
+  const h = cell.getBoundingClientRect().height;
+
+  window.gsap.to(rail, {
+    y: -index * h,
+    duration: 0.7,
+    delay,
+    ease: EASE_OUT,
+    overwrite: true
+  });
 }
 
-function tweenCounterVertical(tl, els, fromProgress, toProgress, duration, at, ease = EASE_OUT) {
-  if (!els?.counterAnchor) return;
-
-  const proxy = { p: fromProgress };
-  tl.to(proxy, {
-    p: toProgress,
-    duration,
-    ease,
-    onUpdate: () => setCounterVertical(els, proxy.p)
-  }, at);
+function setCounterStep(els, stepIndex) {
+  // staggered reel replacement (no overlap)
+  animateRailTo(els.colH, stepIndex, 0.00);
+  animateRailTo(els.colT, stepIndex, 0.03);
+  animateRailTo(els.colO, stepIndex, 0.06);
+  animateRailTo(els.colP, stepIndex, 0.09);
 }
 
-function animateCounterSwap(tl, fromLayer, toLayer, nextValue, at) {
-  const nextChars = setLayerText(toLayer, formatCounter(nextValue));
-  const fromChars = fromLayer ? Array.from(fromLayer.querySelectorAll(".loader-counter-char")) : [];
+function setCounterStepImmediate(els, stepIndex) {
+  setRailIndex(els.colH, stepIndex);
+  setRailIndex(els.colT, stepIndex);
+  setRailIndex(els.colO, stepIndex);
+  setRailIndex(els.colP, stepIndex);
+  if (window.gsap) {
+    window.gsap.set([els.colH, els.colT, els.colO, els.colP], { clearProps: "y" });
+  }
+}
+
+function setCounterVerticalProgress(els, progress) {
+  if (!els?.wrap || !els?.anchor) return;
+
+  const pad = 2.5 * 16; // base assumption; visual is fine and consistent
+  const viewportH = window.innerHeight;
+  const anchorH = els.anchor.getBoundingClientRect().height || 0;
+
+  const travel = Math.max(0, viewportH - (pad * 2) - anchorH);
+  const y = -travel * progress;
 
   if (window.gsap) {
-    window.gsap.set(toLayer, { autoAlpha: 1 });
-    window.gsap.set(nextChars, { yPercent: 120 });
-    window.gsap.set(fromLayer, { autoAlpha: 1 });
-    window.gsap.set(fromChars, { yPercent: 0 });
+    window.gsap.set(els.anchor, { y });
+  } else {
+    els.anchor.style.transform = `translate3d(0, ${y}px, 0)`;
   }
-
-  // old out + new in (same "split" feeling)
-  if (fromChars.length) {
-    tl.to(fromChars, {
-      yPercent: -120,
-      duration: DIGIT_DUR,
-      ease: EASE_OUT,
-      stagger: { each: DIGIT_STAGGER, from: "start" }
-    }, at);
-  }
-
-  if (nextChars.length) {
-    tl.to(nextChars, {
-      yPercent: 0,
-      duration: DIGIT_DUR,
-      ease: EASE_OUT,
-      stagger: { each: DIGIT_STAGGER, from: "start" }
-    }, at);
-  }
-
-  // hide old layer after swap completes
-  tl.set(fromLayer, { autoAlpha: 0 }, at + DIGIT_DUR + 0.05);
 }
 
 export function loaderShow() {
   const els = getLoaderEls();
   if (!els) return Promise.resolve();
 
+  buildCounterReels(els);
+
   if (!window.gsap) {
     els.wrap.style.display = "block";
     els.wrap.style.pointerEvents = "auto";
     els.wrap.style.opacity = "1";
+    setCounterStepImmediate(els, 0);
+    setCounterVerticalProgress(els, 0);
     return Promise.resolve();
   }
 
   window.gsap.killTweensOf([
     els.wrap,
-    els.counterAnchor,
-    els.layerA,
-    els.layerB
+    els.anchor,
+    els.colH,
+    els.colT,
+    els.colO,
+    els.colP
   ]);
-
-  // Initial visible number = 0%
-  setLayerText(els.layerA, formatCounter(0));
-  setLayerText(els.layerB, "");
 
   window.gsap.set(els.wrap, {
     display: "block",
@@ -146,13 +151,9 @@ export function loaderShow() {
     autoAlpha: 1
   });
 
-  window.gsap.set(els.layerA, { autoAlpha: 1 });
-  window.gsap.set(els.layerB, { autoAlpha: 0 });
-
-  const charsA = Array.from(els.layerA.querySelectorAll(".loader-counter-char"));
-  window.gsap.set(charsA, { yPercent: 0 });
-
-  setCounterVertical(els, 0);
+  window.gsap.set(els.anchor, { y: 0 });
+  setCounterStepImmediate(els, 0);
+  setCounterVerticalProgress(els, 0);
 
   return Promise.resolve();
 }
@@ -169,88 +170,86 @@ export function loaderHide() {
   }
 
   window.gsap.set(els.wrap, {
-    autoAlpha: 0,
     display: "none",
-    pointerEvents: "none"
+    pointerEvents: "none",
+    autoAlpha: 0
   });
 
-  window.gsap.set(els.counterAnchor, { clearProps: "transform" });
-  window.gsap.set([els.layerA, els.layerB], { clearProps: "opacity,visibility" });
+  window.gsap.set([els.anchor, els.colH, els.colT, els.colO, els.colP], {
+    clearProps: "transform,y"
+  });
 
   return Promise.resolve();
 }
 
+/**
+ * Main loader progress:
+ * 0 -> 24 -> 72 -> 100
+ * counter position moves with actual progress value
+ */
 export function loaderProgressTo(duration = 1.5) {
   const els = getLoaderEls();
-  if (!els || !window.gsap) return Promise.resolve();
+  if (!els) return Promise.resolve();
 
+  if (!window.gsap) {
+    setCounterStepImmediate(els, 3);
+    setCounterVerticalProgress(els, 1);
+    return Promise.resolve();
+  }
+
+  const state = { p: 0 };
   const tl = window.gsap.timeline();
 
-  // Timing split:
-  // 0 -> 24 (nice intro)
-  // 24 -> 72 (main progress)
-  // 72 -> 100 (finish)
-  const d1 = duration * 0.34;
-  const d2 = duration * 0.40;
-  const d3 = duration * 0.26;
+  // Step 1: 0 -> 24
+  tl.to(state, {
+    p: 0.24,
+    duration: duration * 0.34,
+    ease: EASE_OUT,
+    onStart: () => setCounterStep(els, 1),
+    onUpdate: () => setCounterVerticalProgress(els, state.p)
+  });
 
-  // Start state already shows 0%
-  // Move 0 -> 24
-  animateCounterSwap(tl, els.layerA, els.layerB, 24, 0.00);
-  tweenCounterVertical(tl, els, 0.00, 0.24, d1, 0.00, EASE_OUT);
+  // Step 2: 24 -> 72
+  tl.to(state, {
+    p: 0.72,
+    duration: duration * 0.40,
+    ease: EASE_OUT,
+    onStart: () => setCounterStep(els, 2),
+    onUpdate: () => setCounterVerticalProgress(els, state.p)
+  });
 
-  // Move 24 -> 72
-  animateCounterSwap(tl, els.layerB, els.layerA, 72, d1);
-  tweenCounterVertical(tl, els, 0.24, 0.72, d2, d1, EASE_OUT);
-
-  // Move 72 -> 100
-  animateCounterSwap(tl, els.layerA, els.layerB, 100, d1 + d2);
-  tweenCounterVertical(tl, els, 0.72, 1.00, d3, d1 + d2, EASE_IN_OUT);
-
-  // final visible layer should be B (100%)
-  tl.set(els.layerA, { autoAlpha: 0 }, d1 + d2 + d3 + 0.01);
-  tl.set(els.layerB, { autoAlpha: 1 }, d1 + d2 + d3 + 0.01);
+  // Step 3: 72 -> 100
+  tl.to(state, {
+    p: 1,
+    duration: duration * 0.26,
+    ease: EASE_IN_OUT,
+    onStart: () => setCounterStep(els, 3),
+    onUpdate: () => setCounterVerticalProgress(els, state.p),
+    onComplete: () => setCounterVerticalProgress(els, 1)
+  });
 
   return tl.then(() => {});
 }
 
 /**
  * Fade loader out.
- * onRevealStart fires at the same moment the fade starts,
- * so your homepage reveal anims become visible immediately.
+ * If you already wired onRevealStart before, this still supports it.
  */
 export function loaderOutro({ onRevealStart } = {}) {
   const els = getLoaderEls();
   if (!els || !window.gsap) return Promise.resolve();
 
   const tl = window.gsap.timeline();
-  let fired = false;
 
-  const fireReveal = () => {
-    if (fired) return;
-    fired = true;
+  tl.call(() => {
     if (typeof onRevealStart === "function") onRevealStart();
-  };
-
-  // Counter exits only at 100
-  const activeLayer = window.getComputedStyle(els.layerB).opacity !== "0" ? els.layerB : els.layerA;
-  const activeChars = Array.from(activeLayer.querySelectorAll(".loader-counter-char"));
-
-  tl.to(activeChars, {
-    yPercent: -120,
-    duration: 0.9,
-    ease: EASE_OUT,
-    stagger: { each: DIGIT_STAGGER, from: "start" }
-  }, 0);
-
-  // Start homepage reveal exactly when loader starts fading
-  tl.call(fireReveal, [], 0.08);
+  }, [], 0);
 
   tl.to(els.wrap, {
     autoAlpha: 0,
-    duration: OUTRO_DUR,
-    ease: "none"
-  }, 0.08);
+    duration: 0.45,
+    ease: "power1.out"
+  }, 0);
 
   return tl.then(() => {});
 }
@@ -261,3 +260,23 @@ export async function runLoader(duration = 1.5, container = document, opts = {})
   await loaderOutro(opts);
   await loaderHide();
 }
+
+/* Keeps vertical travel accurate on resize */
+window.addEventListener("resize", () => {
+  const els = getLoaderEls();
+  if (!els || !els.wrap || els.wrap.style.display === "none") return;
+
+  // read current visual step by rail position is overkill; just leave resize safe
+  // if loader is visible during resize, this keeps anchor within bounds
+  const rail = els.colO;
+  if (!rail) return;
+
+  const y = window.gsap ? (window.gsap.getProperty(els.anchor, "y") || 0) : 0;
+  // derive approximate progress from current travel
+  const pad = 2.5 * 16;
+  const viewportH = window.innerHeight;
+  const anchorH = els.anchor.getBoundingClientRect().height || 0;
+  const travel = Math.max(0, viewportH - (pad * 2) - anchorH);
+  const p = travel > 0 ? Math.min(1, Math.max(0, -y / travel)) : 0;
+  setCounterVerticalProgress(els, p);
+});
