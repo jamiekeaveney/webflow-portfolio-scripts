@@ -15,15 +15,15 @@ function getLoaderEls() {
   };
 }
 
-const LOADER_VALUES = [0, 24, 72, 100];
-const EASE_OUT = "expo.out";
-const EASE_IN_OUT = "expo.inOut";
+const EASE_COUNTER = "expo.inOut";
+const EASE_PANEL = "power2.out";
 
+/* Column reels for 0, 24, 72, 100 */
 const REELS = {
-  h: ["", "", "", "1", ""],   // extra empty for final roll-out
-  t: ["", "2", "7", "0", ""],
-  o: ["0", "4", "2", "0", ""],
-  p: ["%", "%", "%", "%", ""]
+  h: ["", "", "", "1"],    // hundreds
+  t: ["", "2", "7", "0"],  // tens
+  o: ["0", "4", "2", "0"], // ones
+  p: ["%", "%", "%", "%"]  // symbol
 };
 
 function buildRail(rail, chars) {
@@ -35,9 +35,12 @@ function buildRail(rail, chars) {
     cell.className = "loader-col-cell";
 
     const value = chars[i];
+
     if (!value) {
       cell.classList.add("loader-col-cell-empty");
-      cell.textContent = "0"; // preserves dimensions for measurement
+      // Invisible placeholder preserves height/width metrics
+      cell.textContent = "0";
+      cell.setAttribute("aria-hidden", "true");
     } else {
       cell.textContent = value;
     }
@@ -54,83 +57,97 @@ function buildCounterReels(els) {
 }
 
 /**
- * Measure actual rendered glyph dimensions and set CSS vars exactly.
- * This removes the "slit" clipping and avoids width guessing.
+ * Measure actual rendered glyph dimensions and size each reel window dynamically.
+ * This avoids clipping and avoids width "guesstimates".
  */
-function measureAndApplyCounterMetrics(els) {
+function sizeCounterWindows(els) {
   if (!els?.counterMain) return;
 
-  const cellsH = els.colH ? Array.from(els.colH.children) : [];
-  const cellsT = els.colT ? Array.from(els.colT.children) : [];
-  const cellsO = els.colO ? Array.from(els.colO.children) : [];
-  const cellsP = els.colP ? Array.from(els.colP.children) : [];
+  const windows = els.counterMain.querySelectorAll(".loader-col-window");
 
-  const allCells = [...cellsH, ...cellsT, ...cellsO, ...cellsP];
-  if (!allCells.length) return;
+  windows.forEach((win) => {
+    const rail = win.querySelector(".loader-col-rail");
+    if (!rail) return;
 
-  let maxH = 0;
-  let maxDigitW = 0;
-  let maxSymbolW = 0;
+    const cells = Array.from(rail.querySelectorAll(".loader-col-cell"));
+    if (!cells.length) return;
 
-  for (const cell of allCells) {
-    const rect = cell.getBoundingClientRect();
-    if (rect.height > maxH) maxH = rect.height;
+    // Reset first so measurements aren't biased by previous sizing
+    win.style.width = "";
+    win.style.height = "";
+    rail.style.width = "";
 
-    const text = (cell.textContent || "").trim();
-    if (cell.classList.contains("loader-col-cell-empty")) continue;
+    let maxW = 0;
+    let maxH = 0;
 
-    if (text === "%") {
-      if (rect.width > maxSymbolW) maxSymbolW = rect.width;
-    } else {
-      if (rect.width > maxDigitW) maxDigitW = rect.width;
-    }
-  }
+    cells.forEach((cell) => {
+      const rect = cell.getBoundingClientRect();
+      if (rect.width > maxW) maxW = rect.width;
+      if (rect.height > maxH) maxH = rect.height;
+    });
 
-  // Add tiny safety buffer so nothing ever clips on antialiasing edges
-  const h = Math.ceil(maxH) + 2;
-  const digitW = Math.ceil(maxDigitW) + 2;
-  const symbolW = Math.ceil(maxSymbolW) + 2;
+    // Small safety padding to avoid clipping due to font rendering / anti-aliasing
+    const padX = Math.ceil(maxH * 0.06);
+    const padY = Math.ceil(maxH * 0.10);
 
-  els.wrap.style.setProperty("--loader-cell-h", `${h}px`);
-  els.wrap.style.setProperty("--loader-col-w", `${digitW}px`);
-  els.wrap.style.setProperty("--loader-col-w-symbol", `${symbolW}px`);
+    const finalW = Math.ceil(maxW + padX * 2);
+    const finalH = Math.ceil(maxH + padY * 2);
+
+    win.style.width = `${finalW}px`;
+    win.style.height = `${finalH}px`;
+
+    // Ensure all cells match the measured window height exactly
+    cells.forEach((cell) => {
+      cell.style.height = `${finalH}px`;
+      cell.style.paddingLeft = `${padX}px`;
+      cell.style.paddingRight = `${padX}px`;
+    });
+
+    rail.style.width = `${finalW}px`;
+  });
+}
+
+function getRailStepHeight(rail) {
+  if (!rail) return 0;
+  const cell = rail.querySelector(".loader-col-cell");
+  return cell ? cell.getBoundingClientRect().height : 0;
 }
 
 function setRailIndex(rail, index) {
   if (!rail) return;
-  const cell = rail.querySelector(".loader-col-cell");
-  if (!cell) return;
-  const h = cell.getBoundingClientRect().height;
+  const h = getRailStepHeight(rail);
   rail.style.transform = `translate3d(0, ${-index * h}px, 0)`;
 }
 
-function animateRailTo(rail, index, delay = 0, duration = 0.8) {
-  if (!rail) return;
-
-  const cell = rail.querySelector(".loader-col-cell");
-  if (!cell) return;
-  const h = cell.getBoundingClientRect().height;
-
-  if (!window.gsap) {
+function animateRailTo(rail, index, delay = 0, duration = 0.95) {
+  if (!rail || !window.gsap) {
     setRailIndex(rail, index);
     return;
   }
+
+  const h = getRailStepHeight(rail);
 
   window.gsap.to(rail, {
     y: -index * h,
     duration,
     delay,
-    ease: EASE_IN_OUT,
+    ease: EASE_COUNTER,
     overwrite: true
   });
 }
 
-function setCounterStep(els, stepIndex) {
-  // nice staggered replacement
-  animateRailTo(els.colH, stepIndex, 0.00, 0.78);
-  animateRailTo(els.colT, stepIndex, 0.03, 0.78);
-  animateRailTo(els.colO, stepIndex, 0.06, 0.78);
-  animateRailTo(els.colP, stepIndex, 0.09, 0.78);
+function setCounterStep(els, stepIndex, opts = {}) {
+  const {
+    baseDelay = 0,
+    stagger = 0.045,
+    railDuration = 0.95
+  } = opts;
+
+  // Staggered reel movement (smoother and less violent)
+  animateRailTo(els.colH, stepIndex, baseDelay + stagger * 0, railDuration);
+  animateRailTo(els.colT, stepIndex, baseDelay + stagger * 1, railDuration);
+  animateRailTo(els.colO, stepIndex, baseDelay + stagger * 2, railDuration);
+  animateRailTo(els.colP, stepIndex, baseDelay + stagger * 3, railDuration);
 }
 
 function setCounterStepImmediate(els, stepIndex) {
@@ -145,16 +162,15 @@ function setCounterStepImmediate(els, stepIndex) {
 }
 
 function setCounterVerticalProgress(els, progress) {
-  if (!els?.anchor) return;
+  if (!els?.wrap || !els?.anchor) return;
 
-  // Use actual computed padding, not a guessed 16px-rem conversion
-  const panelStyles = window.getComputedStyle(els.panel || els.wrap);
-  const padTop = parseFloat(panelStyles.paddingTop || "40") || 40;
-  const padBottom = parseFloat(panelStyles.paddingBottom || "40") || 40;
+  // Read actual panel padding from CSS instead of assuming 2.5rem hard-coded
+  const panelStyles = window.getComputedStyle(els.panel);
+  const pad = parseFloat(panelStyles.paddingTop) || 40;
 
   const viewportH = window.innerHeight;
   const anchorH = els.anchor.getBoundingClientRect().height || 0;
-  const travel = Math.max(0, viewportH - padTop - padBottom - anchorH);
+  const travel = Math.max(0, viewportH - (pad * 2) - anchorH);
 
   const y = -travel * progress;
 
@@ -165,22 +181,28 @@ function setCounterVerticalProgress(els, progress) {
   }
 }
 
-function animateCounterVerticalTo(els, fromProgress, toProgress, duration, ease = EASE_IN_OUT) {
-  if (!els) return Promise.resolve();
+function refreshLoaderLayout(els) {
+  if (!els) return;
+  sizeCounterWindows(els);
 
-  if (!window.gsap) {
-    setCounterVerticalProgress(els, toProgress);
-    return Promise.resolve();
+  // Re-apply current visual step if visible (prevents drift after resize)
+  // We derive current step from the ones rail y if gsap exists; fallback to 0
+  if (!els.colO) return;
+
+  const h = getRailStepHeight(els.colO);
+  if (!h) return;
+
+  let currentY = 0;
+  if (window.gsap) {
+    currentY = Number(window.gsap.getProperty(els.colO, "y")) || 0;
+  } else {
+    // Naive fallback (rarely used)
+    currentY = 0;
   }
 
-  const state = { p: fromProgress };
+  const step = Math.round(Math.abs(currentY) / h);
 
-  return window.gsap.to(state, {
-    p: toProgress,
-    duration,
-    ease,
-    onUpdate: () => setCounterVerticalProgress(els, state.p)
-  }).then(() => {});
+  setCounterStepImmediate(els, Math.max(0, Math.min(3, step)));
 }
 
 export function loaderShow() {
@@ -194,12 +216,14 @@ export function loaderShow() {
     els.wrap.style.pointerEvents = "auto";
     els.wrap.style.opacity = "1";
 
-    measureAndApplyCounterMetrics(els);
+    refreshLoaderLayout(els);
+
     setCounterStepImmediate(els, 0);
     setCounterVerticalProgress(els, 0);
 
     if (els.brand) els.brand.style.opacity = "1";
     if (els.anchor) els.anchor.style.opacity = "1";
+
     return Promise.resolve();
   }
 
@@ -219,23 +243,15 @@ export function loaderShow() {
     autoAlpha: 1
   });
 
-  // Must be visible before measuring
-  window.gsap.set([els.brand, els.anchor], { autoAlpha: 0 });
-  window.gsap.set(els.anchor, { y: 0 });
+  // Initial hidden state for intro fade
+  window.gsap.set(els.brand, { autoAlpha: 0, y: 8 });
+  window.gsap.set(els.anchor, { autoAlpha: 0, y: 0 });
 
-  measureAndApplyCounterMetrics(els);
+  refreshLoaderLayout(els);
   setCounterStepImmediate(els, 0);
   setCounterVerticalProgress(els, 0);
 
-  // Intro fade for 0% + brand
-  const tl = window.gsap.timeline();
-  tl.to([els.brand, els.anchor], {
-    autoAlpha: 1,
-    duration: 0.35,
-    ease: "power1.out"
-  });
-
-  return tl.then(() => {});
+  return Promise.resolve();
 }
 
 export function loaderHide() {
@@ -255,7 +271,7 @@ export function loaderHide() {
     autoAlpha: 0
   });
 
-  window.gsap.set([els.anchor, els.brand, els.colH, els.colT, els.colO, els.colP], {
+  window.gsap.set([els.brand, els.anchor, els.colH, els.colT, els.colO, els.colP], {
     clearProps: "transform,y,opacity"
   });
 
@@ -263,8 +279,11 @@ export function loaderHide() {
 }
 
 /**
- * Slower, smoother staged progress:
- * 0 (hold) -> 24 -> 72 -> 100
+ * Main loader progress:
+ * - intro fade in for brand + 0%
+ * - short hold on 0%
+ * - 0 -> 24 -> 72 -> 100 (slower)
+ * - 100% gets a final micro-stagger/settle before reveal
  */
 export function loaderProgressTo(duration = 3.0) {
   const els = getLoaderEls();
@@ -276,35 +295,83 @@ export function loaderProgressTo(duration = 3.0) {
     return Promise.resolve();
   }
 
+  refreshLoaderLayout(els);
+
+  const state = { p: 0 };
   const tl = window.gsap.timeline();
 
-  // Hold 0 a little longer
-  tl.to({}, { duration: 0.45 });
+  // Intro fade-in
+  tl.to(els.brand, {
+    autoAlpha: 1,
+    y: 0,
+    duration: 0.45,
+    ease: EASE_PANEL
+  }, 0);
 
-  // 0 -> 24
-  tl.add(() => setCounterStep(els, 1), 0);
-  tl.add(animateCounterVerticalTo(els, 0.0, 0.24, duration * 0.30, EASE_IN_OUT), 0);
+  tl.to(els.anchor, {
+    autoAlpha: 1,
+    duration: 0.4,
+    ease: EASE_PANEL
+  }, 0.08);
 
-  // brief settle
-  tl.to({}, { duration: 0.10 });
+  // Hold 0% a little longer (your note)
+  tl.to({}, { duration: 0.55 });
 
-  // 24 -> 72
-  tl.add(() => setCounterStep(els, 2), 0);
-  tl.add(animateCounterVerticalTo(els, 0.24, 0.72, duration * 0.36, EASE_IN_OUT), 0);
+  // Step 1: 0 -> 24 (gentler start)
+  tl.to(state, {
+    p: 0.24,
+    duration: duration * 0.30,
+    ease: EASE_COUNTER,
+    onStart: () => setCounterStep(els, 1, { railDuration: 0.95, stagger: 0.045 }),
+    onUpdate: () => setCounterVerticalProgress(els, state.p)
+  });
 
-  // brief settle
-  tl.to({}, { duration: 0.10 });
+  // Tiny breathing gap helps the motion feel less "violent"
+  tl.to({}, { duration: 0.08 });
 
-  // 72 -> 100
-  tl.add(() => setCounterStep(els, 3), 0);
-  tl.add(animateCounterVerticalTo(els, 0.72, 1.0, duration * 0.34, EASE_IN_OUT), 0);
+  // Step 2: 24 -> 72
+  tl.to(state, {
+    p: 0.72,
+    duration: duration * 0.40,
+    ease: EASE_COUNTER,
+    onStart: () => setCounterStep(els, 2, { railDuration: 0.95, stagger: 0.045 }),
+    onUpdate: () => setCounterVerticalProgress(els, state.p)
+  });
+
+  // Tiny gap
+  tl.to({}, { duration: 0.08 });
+
+  // Step 3: 72 -> 100
+  tl.to(state, {
+    p: 1,
+    duration: duration * 0.30,
+    ease: EASE_COUNTER,
+    onStart: () => setCounterStep(els, 3, { railDuration: 1.0, stagger: 0.05 }),
+    onUpdate: () => setCounterVerticalProgress(els, state.p),
+    onComplete: () => setCounterVerticalProgress(els, 1)
+  });
+
+  // Final "100% finished" stagger lift before reveal (subtle)
+  tl.to(els.colH, { y: `-=${2}`, duration: 0.20, ease: "power2.out" }, "+=0.10");
+  tl.to(els.colT, { y: `-=${2}`, duration: 0.20, ease: "power2.out" }, "<+0.03");
+  tl.to(els.colO, { y: `-=${2}`, duration: 0.20, ease: "power2.out" }, "<+0.03");
+  tl.to(els.colP, { y: `-=${2}`, duration: 0.20, ease: "power2.out" }, "<+0.03");
+
+  tl.to([els.colH, els.colT, els.colO, els.colP], {
+    y: 0,
+    duration: 0.22,
+    ease: "power2.inOut"
+  }, ">");
+
+  // Hold on finished state briefly before reveal
+  tl.to({}, { duration: 0.22 });
 
   return tl.then(() => {});
 }
 
 /**
- * 100% should stagger/roll UP before homepage reveal.
- * Then fade loader out and fire reveal callback at fade start.
+ * Fade loader out.
+ * If you already wired onRevealStart before, this still supports it.
  */
 export function loaderOutro({ onRevealStart } = {}) {
   const els = getLoaderEls();
@@ -312,27 +379,16 @@ export function loaderOutro({ onRevealStart } = {}) {
 
   const tl = window.gsap.timeline();
 
-  // Hold 100% on screen a moment
-  tl.to({}, { duration: 0.22 });
-
-  // Roll 100% up out of frame (to the extra empty row at index 4)
-  tl.add(() => {
-    animateRailTo(els.colH, 4, 0.00, 0.68);
-    animateRailTo(els.colT, 4, 0.03, 0.68);
-    animateRailTo(els.colO, 4, 0.06, 0.68);
-    animateRailTo(els.colP, 4, 0.09, 0.68);
-  }, 0);
-
-  // Fade out starts while that happens
   tl.call(() => {
     if (typeof onRevealStart === "function") onRevealStart();
-  }, [], 0.10);
+  }, [], 0.08);
 
+  // Slightly softer exit
   tl.to(els.wrap, {
     autoAlpha: 0,
     duration: 0.55,
     ease: "power1.out"
-  }, 0.10);
+  }, 0);
 
   return tl.then(() => {});
 }
@@ -344,25 +400,28 @@ export async function runLoader(duration = 3.0, container = document, opts = {})
   await loaderHide();
 }
 
-/* Keep sizing accurate if viewport changes during loader */
+/* Keep reel sizing + vertical travel accurate on resize */
+let _loaderResizeRaf = null;
 window.addEventListener("resize", () => {
   const els = getLoaderEls();
-  if (!els || !els.wrap) return;
+  if (!els || !els.wrap || els.wrap.style.display === "none") return;
 
-  const display = window.getComputedStyle(els.wrap).display;
-  if (display === "none") return;
+  if (_loaderResizeRaf) cancelAnimationFrame(_loaderResizeRaf);
 
-  measureAndApplyCounterMetrics(els);
+  _loaderResizeRaf = requestAnimationFrame(() => {
+    refreshLoaderLayout(els);
 
-  // Re-clamp anchor to current visible position safely
-  const y = window.gsap ? Number(window.gsap.getProperty(els.anchor, "y")) || 0 : 0;
-  const panelStyles = window.getComputedStyle(els.panel || els.wrap);
-  const padTop = parseFloat(panelStyles.paddingTop || "40") || 40;
-  const padBottom = parseFloat(panelStyles.paddingBottom || "40") || 40;
-  const viewportH = window.innerHeight;
-  const anchorH = els.anchor.getBoundingClientRect().height || 0;
-  const travel = Math.max(0, viewportH - padTop - padBottom - anchorH);
-  const p = travel > 0 ? Math.min(1, Math.max(0, -y / travel)) : 0;
+    // derive approximate progress from current anchor y and re-apply safely
+    const y = window.gsap ? (Number(window.gsap.getProperty(els.anchor, "y")) || 0) : 0;
 
-  setCounterVerticalProgress(els, p);
+    const panelStyles = window.getComputedStyle(els.panel);
+    const pad = parseFloat(panelStyles.paddingTop) || 40;
+
+    const viewportH = window.innerHeight;
+    const anchorH = els.anchor.getBoundingClientRect().height || 0;
+    const travel = Math.max(0, viewportH - (pad * 2) - anchorH);
+    const p = travel > 0 ? Math.min(1, Math.max(0, -y / travel)) : 0;
+
+    setCounterVerticalProgress(els, p);
+  });
 });
