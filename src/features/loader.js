@@ -1,41 +1,48 @@
 // src/features/loader.js
 
-const seq = () => {
-  const j = (b, r) => b + Math.floor(Math.random() * r * 2) - r;
+function seq() {
+  const j = (base, r) => base + Math.floor(Math.random() * r * 2) - r;
   return [0, j(24, 8), j(72, 8), 100];
-};
+}
 
-const dom = () => {
+function dom() {
   const w = document.querySelector('[data-loader="wrap"]');
   if (!w) return null;
-  const $ = s => w.querySelector(s);
+  const $ = (s) => w.querySelector(s);
   return {
     wrap: w, panel: $(".loader-panel"), brand: $(".loader-brand"),
     progress: $("[data-loader-progress]"), block: $("[data-loader-block]"),
     top: $("[data-loader-top]"), bot: $("[data-loader-bot]"),
   };
-};
+}
 
-const digs = n => String(n).split("").concat("%")
-  .map((c, i) => `<span class="loader-digit" style="--d:${i}">${c}</span>`).join("");
+function digs(n) {
+  return String(n).split("").concat("%")
+    .map((c, i) => `<span class="loader-digit" style="--d:${i}">${c}</span>`)
+    .join("");
+}
 
-const posY = (e, pct) => {
+function posY(e, pct) {
   const pad = parseFloat(getComputedStyle(e.panel).paddingTop) || 40;
   const bh = e.block.getBoundingClientRect().height;
   const total = Math.max(0, innerHeight - pad * 2 - bh);
   e.block.style.transform = `translate3d(0,${-(total * pct / 100)}px,0)`;
-};
+}
 
-const lastAnim = el => new Promise(res => {
-  const s = el.querySelectorAll(".loader-digit");
-  if (!s.length) return res();
-  const last = s[s.length - 1];
-  last.addEventListener("animationend", function h() { last.removeEventListener("animationend", h); res(); });
-});
+function lastAnim(el) {
+  return new Promise((res) => {
+    const spans = el.querySelectorAll(".loader-digit");
+    if (!spans.length) return res();
+    const last = spans[spans.length - 1];
+    last.addEventListener("animationend", function h() {
+      last.removeEventListener("animationend", h); res();
+    });
+  });
+}
 
-const wait = ms => new Promise(r => setTimeout(r, ms));
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const flip = async (e, val) => {
+async function flip(e, val) {
   e.bot.innerHTML = digs(val);
   e.block.classList.add("is-flipping");
   posY(e, val);
@@ -43,16 +50,14 @@ const flip = async (e, val) => {
   e.top.innerHTML = digs(val);
   e.bot.innerHTML = "";
   e.block.classList.remove("is-flipping");
-};
+}
 
-const exit = async e => {
+async function exit(e) {
   e.block.classList.add("is-exiting");
   await lastAnim(e.top);
   e.top.innerHTML = "";
   e.block.classList.remove("is-exiting");
-};
-
-const pageWrap = () => document.querySelector('[data-barba="container"]');
+}
 
 export function loaderShow() {
   const e = dom();
@@ -78,8 +83,9 @@ export function loaderShow() {
   posY(e, 0);
   requestAnimationFrame(() => requestAnimationFrame(() => { e.block.style.transition = ""; }));
 
-  const pw = pageWrap();
-  if (pw && g) g.set(pw, { y: "-50vh" });
+  // Pre-position page wrapper for parallax (starts 50vh below)
+  const pw = document.querySelector('[data-barba="container"]');
+  if (pw && g) g.set(pw, { y: "50vh" });
 
   return Promise.resolve();
 }
@@ -107,9 +113,11 @@ export async function loaderProgressTo() {
   const steps = seq();
   if (!g) { e.top.innerHTML = digs(100); posY(e, 100); return; }
 
-  // Fade in + first flip fire together — no delay
+  // Fade in brand + counter together over 500ms, then immediately begin
   g.to(e.brand, { autoAlpha: 1, duration: 0.5, ease: "power2.out" });
-  g.to(e.progress, { autoAlpha: 1, duration: 0.5, ease: "power2.out" });
+  await g.to(e.progress, { autoAlpha: 1, duration: 0.5, ease: "power2.out" });
+
+  // Steps — no extra hold, straight into flipping
   await flip(e, steps[1]);
   await wait(50);
   await flip(e, steps[2]);
@@ -117,6 +125,7 @@ export async function loaderProgressTo() {
   await flip(e, 100);
   await wait(50);
 
+  // Brand fades + digits stagger out
   g.to(e.brand, { autoAlpha: 0, duration: 0.5, ease: "power2.out" });
   await exit(e);
 }
@@ -127,16 +136,27 @@ export function loaderOutro({ onRevealStart } = {}) {
   const g = window.gsap;
   if (typeof onRevealStart === "function") onRevealStart();
 
+  // Step 1: Add rounded corners (0 → 0.75rem over 500ms via CSS transition)
   e.wrap.classList.add("is-rounded");
 
-  return new Promise(res => {
+  // Step 2: After 250ms, fire the clip-path wipe + page parallax
+  return new Promise((res) => {
     setTimeout(() => {
       e.wrap.classList.add("is-exit");
 
-      const pw = pageWrap();
-      if (pw && g) g.to(pw, { y: 0, duration: 1, ease: "expo.out", clearProps: "y" });
+      // Parallax: page wrapper rises from 50vh to 0 over the clip-path duration
+      const pw = document.querySelector('[data-barba="container"]');
+      if (pw && g) {
+        g.to(pw, {
+          y: 0,
+          duration: 1,
+          ease: "expo.out",
+          clearProps: "y",
+        });
+      }
 
-      setTimeout(res, 800);
+      // Wait for clip-path transition to finish (750ms + small buffer)
+      setTimeout(() => res(), 800);
     }, 250);
   });
 }
