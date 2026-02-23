@@ -19,26 +19,24 @@ function dom() {
   };
 }
 
-// ── Char helpers ──
+// ── Helpers ──
 
-// Stagger for message text: spread evenly across the flip duration
-// so all chars complete within ~1s regardless of text length
-function msgChars(text) {
+function mkChars(text) {
   const len = text.length;
-  const stagger = Math.max(0.02, Math.min(0.05, 0.8 / len));
+  const ms = Math.max(0.02, Math.min(0.05, 0.8 / len));
   return text.split("").map((c, i) =>
-    `<span class="loader-char" style="--d:${i};--msg-stagger:${stagger}s">${c === " " ? "&nbsp;" : c}</span>`
+    `<span class="loader-char" style="--d:${i};--ms:${ms.toFixed(3)}s">${c === " " ? "&nbsp;" : c}</span>`
   ).join("");
 }
 
-function digs(n) {
+function mkDigs(n) {
   const s = n < 10 ? "0" + n : String(n);
   return s.split("").concat("%").map((c, i) =>
     `<span class="loader-digit" style="--d:${i}">${c}</span>`
   ).join("");
 }
 
-function lastAnimOf(el, sel) {
+function awaitAnim(el, sel) {
   return new Promise((res) => {
     const items = el.querySelectorAll(sel);
     if (!items.length) return res();
@@ -51,8 +49,6 @@ function lastAnimOf(el, sel) {
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// ── Y position ──
-
 function posY(e, pct) {
   const pad = parseFloat(getComputedStyle(e.panel).paddingTop) || 40;
   const bh = e.block.getBoundingClientRect().height;
@@ -60,49 +56,53 @@ function posY(e, pct) {
   e.block.style.transform = `translate3d(0,${-(total * pct / 100)}px,0)`;
 }
 
-// ── Counter flip ──
+// ── Counter ──
 
-async function flip(e, val) {
-  e.bot.innerHTML = digs(val);
+async function flipNum(e, val) {
+  e.bot.innerHTML = mkDigs(val);
   e.block.classList.add("is-flipping");
   posY(e, val);
   e.bar.style.width = val + "%";
-  await lastAnimOf(e.bot, ".loader-digit");
-  e.top.innerHTML = digs(val);
+  await awaitAnim(e.bot, ".loader-digit");
+  e.top.innerHTML = mkDigs(val);
   e.bot.innerHTML = "";
   e.block.classList.remove("is-flipping");
 }
 
-// ── Status: stagger in first message ──
-
-async function enterMsg(e, text) {
-  e.msgTop.innerHTML = msgChars(text);
-  e.msgBot.innerHTML = "";
-  e.status.classList.add("is-entering");
-  await lastAnimOf(e.status, ".loader-char");
-  e.status.classList.remove("is-entering");
-}
-
-// ── Status: flip from current to new message ──
-
-async function flipMsg(e, text) {
-  const current = e.msgTop.textContent || "";
-  e.msgTop.innerHTML = msgChars(current);
-  e.msgBot.innerHTML = msgChars(text);
-  e.status.classList.add("is-flipping");
-  await lastAnimOf(e.msgBot, ".loader-char");
-  e.msgTop.innerHTML = msgChars(text);
-  e.msgBot.innerHTML = "";
-  e.status.classList.remove("is-flipping");
-}
-
-// ── Counter exit ──
-
-async function exitCounter(e) {
+async function exitNum(e) {
   e.block.classList.add("is-exiting");
-  await lastAnimOf(e.top, ".loader-digit");
+  await awaitAnim(e.top, ".loader-digit");
   e.top.innerHTML = "";
   e.block.classList.remove("is-exiting");
+}
+
+// ── Status message ──
+// enterMsg: staggers chars in from below (called once)
+// flipMsg: old text exits up, new text enters from below (called once)
+// These use unique class names so they never accidentally re-trigger
+
+function enterMsg(e, text) {
+  e.msgTop.innerHTML = mkChars(text);
+  e.msgBot.innerHTML = "";
+  e.status.classList.add("is-msg-entering");
+  // Don't await — runs alongside the counter flip
+  awaitAnim(e.status, ".loader-char").then(() => {
+    e.status.classList.remove("is-msg-entering");
+  });
+}
+
+function flipMsg(e, text) {
+  // Rebuild current text as chars for animation
+  const current = e.msgTop.textContent || "";
+  e.msgTop.innerHTML = mkChars(current);
+  e.msgBot.innerHTML = mkChars(text);
+  e.status.classList.add("is-msg-flipping");
+  awaitAnim(e.msgBot, ".loader-char").then(() => {
+    // Swap: new text becomes static in top slot
+    e.msgTop.innerHTML = mkChars(text);
+    e.msgBot.innerHTML = "";
+    e.status.classList.remove("is-msg-flipping");
+  });
 }
 
 // ── Public API ──
@@ -112,7 +112,7 @@ export function loaderShow() {
   if (!e) return Promise.resolve();
   const g = window.gsap;
 
-  e.top.innerHTML = digs(0);
+  e.top.innerHTML = mkDigs(0);
   e.bot.innerHTML = "";
   e.msgTop.innerHTML = "";
   e.msgBot.innerHTML = "";
@@ -149,7 +149,7 @@ export function loaderHide() {
   e.block.style.transform = "";
   e.bar.style.width = "0%";
   e.block.classList.remove("is-flipping", "is-exiting");
-  e.status.classList.remove("is-entering", "is-flipping");
+  e.status.classList.remove("is-msg-entering", "is-msg-flipping");
   e.top.innerHTML = "";
   e.bot.innerHTML = "";
   e.msgTop.innerHTML = "";
@@ -162,31 +162,31 @@ export async function loaderProgressTo() {
   if (!e) return;
   const g = window.gsap;
   const steps = seq();
-  if (!g) { e.top.innerHTML = digs(100); posY(e, 100); return; }
+  if (!g) { e.top.innerHTML = mkDigs(100); posY(e, 100); return; }
 
-  // Fade in footer + counter
+  // Fade in
   g.to(e.footer, { autoAlpha: 1, duration: 0.5, ease: "power2.out" });
   g.to(e.progress, { autoAlpha: 1, duration: 0.5, ease: "power2.out" });
   await wait(500);
 
-  // Step 1: counter flips + "Hold tight" staggers in
+  // Step 1: 0→~24, "Hold tight" staggers in alongside
   enterMsg(e, "Hold tight");
-  await flip(e, steps[1]);
+  await flipNum(e, steps[1]);
   await wait(50);
 
-  // Step 2: counter flips + status flips to "Hi there!"
+  // Step 2: ~24→~72, status untouched — just counter flips
+  await flipNum(e, steps[2]);
+  await wait(50);
+
+  // Step 3: ~72→100, status flips "Hold tight" → "Hi there!" alongside
   flipMsg(e, "Hi there!");
-  await flip(e, steps[2]);
-  await wait(50);
-
-  // Step 3: 100%
-  await flip(e, 100);
+  await flipNum(e, 100);
   await wait(50);
 
   // Exit: 100% staggers out, footer + bar fade out
   g.to(e.footer, { autoAlpha: 0, duration: 0.5, ease: "power2.out" });
   g.to(e.bar, { autoAlpha: 0, duration: 0.5, ease: "power2.out" });
-  await exitCounter(e);
+  await exitNum(e);
 }
 
 export function loaderOutro({ onRevealStart } = {}) {
