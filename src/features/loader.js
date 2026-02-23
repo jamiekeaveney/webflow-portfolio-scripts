@@ -11,18 +11,46 @@ function dom() {
   const $ = (s) => w.querySelector(s);
   return {
     wrap: w, panel: $(".loader-panel"),
-    footer: $(".loader-footer"), copy: $(".loader-copy"), status: $(".loader-status"),
-    statusTop: $("[data-loader-status-top]"), statusBot: $("[data-loader-status-bot]"),
+    footer: $("[data-loader-footer]"),
+    copy: $("[data-loader-copy]"), status: $("[data-loader-status]"),
     progress: $("[data-loader-progress]"), block: $("[data-loader-block]"),
     top: $("[data-loader-top]"), bot: $("[data-loader-bot]"),
   };
 }
 
-function digs(n) {
-  return String(n).split("").concat("%")
-    .map((c, i) => `<span class="loader-digit" style="--d:${i}">${c}</span>`)
-    .join("");
+// ── Char helpers ──
+
+function chars(text, cls) {
+  return text.split("").map((c, i) =>
+    `<span class="${cls}" style="--d:${i}">${c === " " ? "&nbsp;" : c}</span>`
+  ).join("");
 }
+
+function digs(n) {
+  return String(n).split("").concat("%").map((c, i) =>
+    `<span class="loader-digit" style="--d:${i}">${c}</span>`
+  ).join("");
+}
+
+function padNum(n) {
+  return n < 10 ? "0" + n : String(n);
+}
+
+// Wait for last animated child to finish
+function lastAnimOf(el, selector) {
+  return new Promise((res) => {
+    const items = el.querySelectorAll(selector);
+    if (!items.length) return res();
+    const last = items[items.length - 1];
+    last.addEventListener("animationend", function h() {
+      last.removeEventListener("animationend", h); res();
+    });
+  });
+}
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ── Y position ──
 
 function posY(e, pct) {
   const pad = parseFloat(getComputedStyle(e.panel).paddingTop) || 40;
@@ -31,81 +59,80 @@ function posY(e, pct) {
   e.block.style.transform = `translate3d(0,${-(total * pct / 100)}px,0)`;
 }
 
-function lastAnim(el) {
-  return new Promise((res) => {
-    const spans = el.querySelectorAll(".loader-digit");
-    if (!spans.length) return res();
-    const last = spans[spans.length - 1];
-    last.addEventListener("animationend", function h() {
-      last.removeEventListener("animationend", h); res();
-    });
-  });
-}
-
-function animEnd(el) {
-  return new Promise((res) => {
-    el.addEventListener("animationend", function h() {
-      el.removeEventListener("animationend", h); res();
-    });
-  });
-}
-
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// ── Counter flip ──
 
 async function flip(e, val) {
   e.bot.innerHTML = digs(val);
   e.block.classList.add("is-flipping");
   posY(e, val);
-  await lastAnim(e.bot);
+  await lastAnimOf(e.bot, ".loader-digit");
   e.top.innerHTML = digs(val);
   e.bot.innerHTML = "";
   e.block.classList.remove("is-flipping");
 }
 
+// ── Status flip (swap messages char by char) ──
+
 async function flipStatus(e, text) {
-  e.statusBot.textContent = text;
+  // Build top/bot wrappers with chars
+  const topText = e.status.querySelector(".loader-status-top")?.textContent || "";
+  e.status.innerHTML =
+    `<span class="loader-status-top">${chars(topText, "loader-char")}</span>` +
+    `<span class="loader-status-bot">${chars(text, "loader-char")}</span>`;
   e.status.classList.add("is-flipping");
-  await animEnd(e.statusBot);
-  e.statusTop.textContent = text;
-  e.statusBot.textContent = "";
+  await lastAnimOf(e.status, ".loader-status-bot > .loader-char");
+  // Swap — set new text, clear old, remove class
+  e.status.innerHTML = `<span class="loader-status-top">${chars(text, "loader-char")}</span>`;
   e.status.classList.remove("is-flipping");
 }
 
-async function exitAll(e) {
-  // Numbers stagger out
+// ── Stagger text in ──
+
+async function enterText(el, text) {
+  el.innerHTML = chars(text, "loader-char");
+  el.classList.add("is-entering");
+  await lastAnimOf(el, ".loader-char");
+  el.classList.remove("is-entering");
+}
+
+// ── Stagger text out ──
+
+async function exitText(el) {
+  el.classList.add("is-exiting");
+  await lastAnimOf(el, ".loader-char");
+  el.innerHTML = "";
+  el.classList.remove("is-exiting");
+}
+
+// ── Counter exit ──
+
+async function exitCounter(e) {
   e.block.classList.add("is-exiting");
-  // Footer text slides out (staggered slightly after)
-  e.copy.classList.add("is-exiting");
-  e.status.classList.add("is-exiting");
-
-  await lastAnim(e.top);
-
+  await lastAnimOf(e.top, ".loader-digit");
   e.top.innerHTML = "";
   e.block.classList.remove("is-exiting");
-  e.copy.classList.remove("is-exiting");
-  e.status.classList.remove("is-exiting");
 }
+
+// ── Public API ──
 
 export function loaderShow() {
   const e = dom();
   if (!e) return Promise.resolve();
   const g = window.gsap;
-  e.top.innerHTML = digs(0);
+
+  e.top.innerHTML = digs(padNum(0));
   e.bot.innerHTML = "";
-  e.statusTop.textContent = "Hi there";
-  e.statusBot.textContent = "";
+  e.copy.innerHTML = "";
+  e.status.innerHTML = "";
 
   if (!g) {
     Object.assign(e.wrap.style, { display: "block", pointerEvents: "auto", opacity: "1" });
-    e.footer.style.opacity = "1";
-    e.progress.style.opacity = "1";
     posY(e, 0);
     return Promise.resolve();
   }
 
   g.killTweensOf([e.wrap, e.footer, e.progress]);
   g.set(e.wrap, { display: "block", pointerEvents: "auto", autoAlpha: 1 });
-  g.set(e.footer, { autoAlpha: 0 });
   g.set(e.progress, { autoAlpha: 0 });
   e.block.style.transition = "none";
   posY(e, 0);
@@ -119,12 +146,16 @@ export function loaderHide() {
   const g = window.gsap;
   if (!g) { e.wrap.style.cssText = "display:none;pointer-events:none;opacity:0"; return Promise.resolve(); }
   g.set(e.wrap, { display: "none", pointerEvents: "none", autoAlpha: 0 });
-  g.set([e.footer, e.progress], { clearProps: "all" });
+  g.set(e.progress, { clearProps: "all" });
   e.block.style.transition = "";
   e.block.style.transform = "";
   e.block.classList.remove("is-flipping", "is-exiting");
+  e.copy.classList.remove("is-entering", "is-exiting");
+  e.status.classList.remove("is-entering", "is-exiting", "is-flipping");
   e.top.innerHTML = "";
   e.bot.innerHTML = "";
+  e.copy.innerHTML = "";
+  e.status.innerHTML = "";
   return Promise.resolve();
 }
 
@@ -135,16 +166,22 @@ export async function loaderProgressTo() {
   const steps = seq();
   if (!g) { e.top.innerHTML = digs(100); posY(e, 100); return; }
 
-  // Fade in footer + counter together
-  g.to(e.footer, { autoAlpha: 1, duration: 0.5, ease: "power2.out" });
-  await g.to(e.progress, { autoAlpha: 1, duration: 0.5, ease: "power2.out" });
+  // Fade in counter
+  g.to(e.progress, { autoAlpha: 1, duration: 0.5, ease: "power2.out" });
 
-  // Step 1 — status stays "Hi there"
+  // Stagger in copyright + "Hold tight" simultaneously
+  enterText(e.copy, "©2026 Jamie Keaveney");
+  enterText(e.status, "Hold tight");
+
+  // Wait for fade-in to settle
+  await wait(500);
+
+  // Step 1 — counter flips, footer text stays
   await flip(e, steps[1]);
   await wait(50);
 
-  // Step 2 — status flips to "Loading..."
-  flipStatus(e, "Loading...");
+  // Step 2 — counter flips + status flips to "Hi there!"
+  flipStatus(e, "Hi there!");
   await flip(e, steps[2]);
   await wait(50);
 
@@ -152,16 +189,16 @@ export async function loaderProgressTo() {
   await flip(e, 100);
   await wait(50);
 
-  // Everything exits together
-  await exitAll(e);
+  // Everything exits together — all char by char
+  exitText(e.copy);
+  exitText(e.status);
+  await exitCounter(e);
 }
 
 export function loaderOutro({ onRevealStart } = {}) {
   const e = dom();
   if (!e) return Promise.resolve();
   if (typeof onRevealStart === "function") onRevealStart();
-
-  // Straight to homepage — just hide the loader
   if (window.gsap) {
     return window.gsap.to(e.wrap, { autoAlpha: 0, duration: 0.35, ease: "power1.out" }).then(() => {});
   }
