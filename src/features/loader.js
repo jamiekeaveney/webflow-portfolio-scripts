@@ -101,7 +101,7 @@ export function loaderHide() {
   return Promise.resolve();
 }
 
-export async function loaderProgressTo() {
+export async function loaderProgressTo({ onRevealStart } = {}) {
   const e = dom();
   if (!e) return;
   const g = window.gsap;
@@ -116,15 +116,16 @@ export async function loaderProgressTo() {
   await wait(20);
   await flipNum(e, 100);
 
-  // Panel (spinner + bar) fades while 100% staggers out
+  // Fire reveals NOW — while panel fades + 100% staggers out
+  if (typeof onRevealStart === "function") onRevealStart();
+
   g.to(e.panel, { autoAlpha: 0, duration: 0.5, ease: "power2.out" });
   await exitNum(e);
 }
 
-export function loaderOutro({ onRevealStart } = {}) {
+export function loaderOutro() {
   const e = dom();
   if (!e) return Promise.resolve();
-  if (typeof onRevealStart === "function") onRevealStart();
   if (window.gsap) {
     return window.gsap.to(e.wrap, { autoAlpha: 0, duration: 0.3, ease: "power1.out" }).then(() => {});
   }
@@ -134,8 +135,8 @@ export function loaderOutro({ onRevealStart } = {}) {
 
 export async function runLoader(duration = 5.0, _container = document, opts = {}) {
   await loaderShow();
-  await loaderProgressTo();
-  await loaderOutro(opts);
+  await loaderProgressTo(opts);
+  await loaderOutro();
   await loaderHide();
 }
 
