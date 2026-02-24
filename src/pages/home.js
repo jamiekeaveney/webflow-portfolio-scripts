@@ -6,7 +6,7 @@ import { runLoader, loaderHide } from "../features/loader.js";
 // ── Fine-tune this to control how soon home content reveals ──
 // 0 = reveals start the instant 100% begins its stagger-out
 // 0.2 = 200ms after that, etc. Negative values start even earlier.
-const REVEAL_DELAY = 0;
+const REVEAL_DELAY = 0.5;
 
 export async function initHome(container, ctx) {
   if (!container) return Promise.resolve();
