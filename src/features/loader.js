@@ -1,7 +1,8 @@
 // src/features/loader.js
 
-// ── Tune this to control how fast the loader (bg included) fades out ──
+// ── Tune these ──
 const FADE_DURATION = 0.5;
+const FADE_IN_DURATION = 0.35;
 
 function seq() {
   const j = (b, r) => b + Math.floor(Math.random() * r * 2) - r;
@@ -77,6 +78,9 @@ export function loaderShow() {
   }
   g.killTweensOf(e.wrap);
   g.set(e.wrap, { display: "block", pointerEvents: "auto", autoAlpha: 1 });
+  g.set(e.progress, { autoAlpha: 0 });
+  g.set(e.spinner, { autoAlpha: 0 });
+  g.set(e.bar, { autoAlpha: 0 });
   e.block.style.transition = "none";
   e.bar.style.transition = "none";
   posY(e, 0);
@@ -93,6 +97,7 @@ export function loaderHide() {
   const g = window.gsap;
   if (!g) { e.wrap.style.cssText = "display:none;pointer-events:none;opacity:0"; return Promise.resolve(); }
   g.set(e.wrap, { display: "none", pointerEvents: "none", autoAlpha: 0 });
+  g.set([e.progress, e.spinner, e.bar], { clearProps: "all" });
   e.block.style.transition = "";
   e.block.style.transform = "";
   e.bar.style.width = "0%";
@@ -109,6 +114,11 @@ export async function loaderProgressTo({ onRevealStart } = {}) {
   const steps = seq();
   if (!g) { e.top.innerHTML = mkDigs(100); posY(e, 100); return; }
 
+  // Fade in all elements together
+  g.to(e.progress, { autoAlpha: 1, duration: FADE_IN_DURATION, ease: "power2.out" });
+  g.to(e.spinner, { autoAlpha: 1, duration: FADE_IN_DURATION, ease: "power2.out" });
+  g.to(e.bar, { autoAlpha: 1, duration: FADE_IN_DURATION, ease: "power2.out" });
+
   await wait(300);
 
   await flipNum(e, steps[1]);
@@ -117,7 +127,6 @@ export async function loaderProgressTo({ onRevealStart } = {}) {
   await wait(20);
   await flipNum(e, 100);
 
-  // Fire reveals + fade ENTIRE loader (bg + content) in one go
   if (typeof onRevealStart === "function") onRevealStart();
 
   g.to(e.wrap, { autoAlpha: 0, duration: FADE_DURATION, ease: "power2.out" });
@@ -125,15 +134,12 @@ export async function loaderProgressTo({ onRevealStart } = {}) {
 }
 
 export function loaderOutro() {
-  // Fade already started in loaderProgressTo — just ensure it's done
   const e = dom();
   if (!e) return Promise.resolve();
   const g = window.gsap;
   if (!g) return new Promise((r) => setTimeout(r, FADE_DURATION * 1000));
-  // If the wrap is already invisible, resolve immediately
   const current = parseFloat(getComputedStyle(e.wrap).opacity);
   if (current <= 0.01) return Promise.resolve();
-  // Otherwise wait for it
   return g.to(e.wrap, { autoAlpha: 0, duration: 0.15, ease: "power1.out" }).then(() => {});
 }
 
