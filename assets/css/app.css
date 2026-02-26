@@ -28,6 +28,11 @@ html.lenis body {
   --_state---false: 0;
 }
 
+[data-trigger] {
+  --_transform---on: 0;
+  --_transform---off: 1;
+}
+
 .is-active,
 [data-state~="checked"]:is(:checked, :has(:checked)),
 [data-state~="current"]:is(.w--current, :has(.w--current)),
@@ -38,7 +43,6 @@ html.lenis body {
   --_state---false: 1;
 }
 
-/* Tablet and down */
 @media (max-width: 991px) {
   [data-trigger~="group"]:has([data-state~="current"].w--current)
     [data-trigger~="hover-other"]:not(.w--current) {
@@ -47,7 +51,6 @@ html.lenis body {
   }
 }
 
-/* Desktop */
 @media (min-width: 992px) {
   [data-trigger~="group"]:has(
       [data-state~="current"].w--current:not([data-current="no-desktop"])
@@ -58,7 +61,6 @@ html.lenis body {
   }
 }
 
-/* Focus behaviour (keep Webflow designer support) */
 .wf-design-mode [data-trigger~="preview"],
 [data-trigger~="focus"]:is(:focus-visible, :has(:focus-visible)),
 [data-trigger~="group"]:has(
@@ -70,7 +72,11 @@ html.lenis body {
   --_trigger---off: 1;
 }
 
-/* Hover behaviour */
+[data-trigger~="focus-other"]:is(:focus-visible, :has(:focus-visible)) {
+  --_transform---on: 1;
+  --_transform---off: 0;
+}
+
 @media (hover: hover) {
   [data-trigger~="hover"]:hover {
     --_trigger---on: 0;
@@ -87,13 +93,29 @@ html.lenis body {
     --_trigger---on: 1 !important;
     --_trigger---off: 0 !important;
   }
+
+  [data-trigger~="hover"]:hover,
+  [data-trigger~="hover-other"]:hover {
+    --_transform---on: 1;
+    --_transform---off: 0;
+  }
+
+  [data-trigger~="hover"]:is(:focus-visible, :has(:focus-visible)) {
+    --_transform---on: 1;
+    --_transform---off: 0;
+  }
 }
 
-/* Touch devices */
 @media (hover: none) {
   [data-trigger~="mobile"] {
     --_trigger---on: 0;
     --_trigger---off: 1;
+  }
+
+  [data-trigger~="hover"],
+  [data-trigger~="hover-other"] {
+    --_transform---on: 0;
+    --_transform---off: 1;
   }
 }
 
@@ -119,8 +141,3 @@ html.lenis body {
 svg[viewBox] {
   overflow: visible !important;
 }
-
-.logo .logo-letter {
-  transition-delay: calc(0.02s * var(--i));
-}
-
