@@ -148,3 +148,8 @@ html.lenis body {
 svg[viewBox] {
   overflow: visible !important;
 }
+
+html.is-transitioning,
+html.is-transitioning * {
+  cursor: progress !important;
+}

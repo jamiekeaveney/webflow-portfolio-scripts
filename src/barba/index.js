@@ -10,17 +10,20 @@ import { closeNav, isFromPanel, clearFromPanel } from "../core/nav.js";
 import { destroyPage } from "../pages/index.js";
 
 const VT_DURATION = 1.5;
-const VT_EASE = "expo.out";
+const VT_EASE = "cubic-bezier(0.25, 0.1, 0.25, 1)";
 const VT_FADE_TO = 0.5;
+
+const CURSOR_CLASS = "is-transitioning";
+const setCursorBusy = (on) =>
+  document.documentElement.classList.toggle(CURSOR_CLASS, !!on);
 
 const resetScrollTop = () => window.scrollTo(0, 0);
 
 function getNamespace(data, which = "next") {
   const obj = data?.[which];
-  if (!obj) return "";
   return (
-    obj.namespace ||
-    obj.container?.getAttribute?.("data-barba-namespace") ||
+    obj?.namespace ||
+    obj?.container?.getAttribute?.("data-barba-namespace") ||
     ""
   );
 }
@@ -42,7 +45,7 @@ export function initBarba({ initContainer }) {
     if (/^https?:\/\//i.test(href)) {
       try {
         const url = new URL(href, window.location.href);
-        if (url.origin !== window.location.origin) return true;
+        return url.origin !== window.location.origin;
       } catch (_) {}
     }
     return false;
@@ -52,14 +55,18 @@ export function initBarba({ initContainer }) {
     history.scrollRestoration = "manual";
   } catch (_) {}
 
+  window.barba.hooks.before(() => setCursorBusy(true));
+  window.barba.hooks.after(() => setCursorBusy(false));
+
   window.barba.hooks.after((data) => {
     syncWebflowPageIdFromNextHtml(data?.next?.html || "");
     reinitWebflowIX2();
     resetWCurrent();
     clearFromPanel();
 
-    window.gsap?.set(data.next.container, {
-      clearProps: "position,top,left,width,height,overflow,zIndex,opacity,transform"
+    window.gsap?.set(data?.next?.container, {
+      clearProps:
+        "position,top,left,right,bottom,width,height,overflow,zIndex,opacity,transform,backgroundColor"
     });
   });
 
@@ -80,7 +87,6 @@ export function initBarba({ initContainer }) {
           destroyLenis();
           killAllScrollTriggers();
           destroyPage(getNamespace(data, "current"));
-
           try {
             data.current.container.remove();
           } catch (_) {}
@@ -110,14 +116,8 @@ export function initBarba({ initContainer }) {
           const gsap = window.gsap;
           if (!gsap) return;
 
-          // Capture scroll position BEFORE resetting
           const scrollY = window.scrollY || window.pageYOffset || 0;
 
-          // Reset scroll so new page starts at top
-          resetScrollTop();
-
-          // Pin old page at its current visual position.
-          // top: -scrollY keeps the visible viewport portion in place.
           gsap.set(data.current.container, {
             position: "fixed",
             top: -scrollY,
@@ -129,12 +129,12 @@ export function initBarba({ initContainer }) {
             backgroundColor: "transparent"
           });
 
-          // New page sits on top
           gsap.set(data.next.container, { zIndex: 2 });
 
-          // Animate the old page out from its current visual position
+          resetScrollTop();
+
           return gsap.timeline().to(data.current.container, {
-            y: "-50vh",
+            y: "-25vh",
             scale: 0.95,
             opacity: VT_FADE_TO,
             duration: VT_DURATION,
@@ -147,23 +147,18 @@ export function initBarba({ initContainer }) {
           const gsap = window.gsap;
           if (!gsap) return;
 
-          // Fire initContainer NOW so reveals start during the slide-in,
-          // not after it completes
           const initPromise = initContainer(data?.next?.container || document, {
             isFirstLoad: false,
             isNavigation: true,
             namespace: getNamespace(data, "next")
           });
 
-          // Slide new page up — runs simultaneously with leave (sync: true)
-          // and simultaneously with initContainer/reveals
           const tl = gsap.timeline().from(data.next.container, {
             y: "100vh",
             duration: VT_DURATION,
             ease: VT_EASE
           });
 
-          // Wait for both the animation and init to finish
           await Promise.all([tl, initPromise]);
         },
 
@@ -176,8 +171,6 @@ export function initBarba({ initContainer }) {
           });
         },
 
-        // after is handled by the global hooks.after above
-        // initContainer already ran in enter, so nothing needed here
         after() {}
       }
     ]
