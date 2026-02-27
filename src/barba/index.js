@@ -134,7 +134,7 @@ export function initBarba({ initContainer }) {
           resetScrollTop();
 
           return gsap.timeline().to(data.current.container, {
-            y: "-25vh",
+            y: "-5vh",
             scale: 0.95,
             opacity: VT_FADE_TO,
             duration: VT_DURATION,
