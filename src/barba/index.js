@@ -9,8 +9,9 @@ import {
 import { closeNav, isFromPanel, clearFromPanel } from "../core/nav.js";
 import { destroyPage } from "../pages/index.js";
 
-var VT_DURATION = 1.25;
+var VT_DURATION = 1.5;
 var VT_EASE = "expo.out";
+var VT_FADE_TO = 0; // set to 0.2–0.4 if you want only a slight fade instead of full fade-out
 
 function resetScrollTop() {
   window.scrollTo(0, 0);
@@ -83,7 +84,8 @@ export function initBarba({ initContainer }) {
     // Reset new container to normal flow
     if (window.gsap) {
       window.gsap.set(data.next.container, {
-        clearProps: "position,top,left,width,height,overflow,y,zIndex,visibility,opacity,transform,clipPath,scale"
+        clearProps:
+          "position,top,left,width,height,overflow,y,zIndex,visibility,opacity,transform,clipPath,scale"
       });
     }
 
@@ -103,7 +105,6 @@ export function initBarba({ initContainer }) {
     prevent: preventBarba,
 
     transitions: [
-
       /* ── Mobile panel navigation — no page animation ── */
       {
         name: "panel-nav",
@@ -162,9 +163,11 @@ export function initBarba({ initContainer }) {
 
           var tl = window.gsap.timeline();
 
+          // Fade + move + scale out the old page
           tl.to(data.current.container, {
             y: "-50vh",
-            scale: 0.92,
+            scale: 0.95,
+            opacity: VT_FADE_TO, // ✅ fade out during the leave animation
             duration: VT_DURATION,
             ease: VT_EASE,
             transformOrigin: "50% 0%"
