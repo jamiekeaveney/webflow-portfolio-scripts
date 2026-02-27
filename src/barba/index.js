@@ -118,6 +118,8 @@ export function initBarba({ initContainer }) {
 
           const scrollY = window.scrollY || window.pageYOffset || 0;
 
+          // Make container AND all direct children transparent
+          // so background from body/html shows through
           gsap.set(data.current.container, {
             position: "fixed",
             top: -scrollY,
@@ -129,17 +131,26 @@ export function initBarba({ initContainer }) {
             backgroundColor: "transparent"
           });
 
+          // Kill background on direct children (page-wrapper etc.)
+          const kids = data.current.container.children;
+          for (let i = 0; i < kids.length; i++) {
+            kids[i].style.backgroundColor = "transparent";
+          }
+
           gsap.set(data.next.container, { zIndex: 2 });
 
           resetScrollTop();
 
+          // Transform origin at viewport top = scrollY px from
+          // the container's top edge. This keeps the scale anchored
+          // to what the user was actually seeing, not the document top.
           return gsap.timeline().to(data.current.container, {
-            y: "-5vh",
-            scale: 1,
+            y: "-25vh",
+            scale: 0.95,
             opacity: VT_FADE_TO,
             duration: VT_DURATION,
             ease: VT_EASE,
-            transformOrigin: "50% 0%"
+            transformOrigin: "50% " + scrollY + "px"
           });
         },
 
