@@ -21,33 +21,17 @@ function configureGSAPDefaults() {
   window.gsap.config({ nullTargetWarn: false });
 }
 
-/**
- * Single init pipeline for every Barba container.
- * Anything created here should register cleanup via addCleanup() utilities in modules.
- */
 export async function initContainer(container, ctx = {}) {
   container = container || document;
 
-  // clean slate for this view
   runCleanups();
-
-  // scroll runtime
   createLenis();
-
-  // split first so reveals can find .single-letter/.single-line
   initSplit(container);
-
-  // media + components
   initVideoAuto(container);
-
-  // Group delays first (vars)
   initVarsGrouped(container, ctx);
-
-  // Prime reveal/var states BEFORE loader so nothing flashes
   primeRevealLoad(container, ctx);
   primeVarsLoad(container, ctx, "load");
 
-  // One guarded starter for load reveals (can be called early by home.js)
   var loadRevealsStarted = false;
   var startLoadReveals = function () {
     if (loadRevealsStarted) return;
@@ -57,16 +41,12 @@ export async function initContainer(container, ctx = {}) {
     initVarsLoad(container, ctx, "load", { skipPrime: true });
   };
 
-  // Expose to page-level hooks
   ctx.startLoadReveals = startLoadReveals;
 
-  // Per-page hooks first (home.js can run loader and trigger startLoadReveals early)
   await initPage(ctx.namespace || "", container, ctx);
 
-  // Fallback (non-home pages / if not started early)
   startLoadReveals();
 
-  // scroll reveals
   initTextScroll(container);
   initRevealScroll(container);
 
@@ -76,12 +56,6 @@ export async function initContainer(container, ctx = {}) {
 
 onReady(function () {
   configureGSAPDefaults();
-
-  // Persistent nav (lives outside Barba container)
   initNav();
-
-  // Boot Barba once
-  initBarba({
-    initContainer
-  });
+  initBarba({ initContainer });
 });

@@ -12,8 +12,7 @@ import { destroyPage } from "../pages/index.js";
 var VT_DURATION = 1.25;
 var VT_EASE = "expo.out";
 
-// DEBUG — bright body colour so you can see containers vs background
-// Remove this line (or set to your real bg) once transitions look right
+// DEBUG — remove or change once transitions look correct
 var DEBUG_BODY_BG = "#ff00ff";
 
 function resetScrollTop() {
@@ -42,7 +41,7 @@ export function initBarba({ initContainer }) {
     return;
   }
 
-  // DEBUG — set body bg so you can see the layers
+  // DEBUG
   document.body.style.backgroundColor = DEBUG_BODY_BG;
 
   function preventBarba({ el } = {}) {
@@ -107,56 +106,74 @@ export function initBarba({ initContainer }) {
         },
 
         async leave(data) {
+          /*
+           * BOTH containers exist in the DOM right now.
+           * data.current.container = old page (visible)
+           * data.next.container    = new page (appended by Barba, hidden)
+           *
+           * We animate both simultaneously, then remove the old one.
+           */
+
           var skipAnimation = isFromPanel();
+          var current = data.current.container;
+          var next = data.next.container;
 
           if (skipAnimation) {
-            // Panel navigation — let menu close animation play,
-            // then just hide the old container
-            // Wait for menu close transition (~0.8s) before proceeding
-            await new Promise(function (resolve) {
-              setTimeout(resolve, 850);
-            });
-
+            // Panel navigation — instant swap, no page animation.
+            // Menu close CSS transition plays on persistent header.
             try {
-              data.current.container.remove();
+              current.remove();
             } catch (_) {}
             return;
           }
 
-          // Standard navigation — old page slides up + scales
-          // Pin the old container to viewport so it only moves
-          // what's visible, not the entire document height
-          var current = data.current.container;
-
+          // Standard navigation — simultaneous slide transition
           if (window.gsap) {
-            // Capture scroll position before fixing
             var scrollY = window.scrollY || window.pageYOffset || 0;
 
-            // Fix the container to viewport so we animate
-            // only the visible portion, not thousands of px
+            // OLD PAGE: pin to viewport at current scroll offset,
+            // clip to viewport so only visible portion shows
             window.gsap.set(current, {
               position: "fixed",
               top: -scrollY,
               left: 0,
               width: "100%",
-              height: "auto",
+              zIndex: 0,
+              clipPath: "inset(" + scrollY + "px 0 0 0)"
+            });
+
+            // NEW PAGE: position below viewport, on top of old
+            window.gsap.set(next, {
+              position: "fixed",
+              top: 0,
+              left: 0,
+              width: "100%",
+              height: "100vh",
+              overflow: "hidden",
+              y: "100vh",
               zIndex: 1,
-              overflow: "hidden"
+              visibility: "visible",
+              opacity: 1
             });
 
-            // Clip to viewport height so only visible area shows
-            window.gsap.set(current, {
-              clipPath: "inset(0 0 0 0)"
-            });
+            // Animate both at the same time
+            var tl = window.gsap.timeline();
 
-            // Animate: slide up 50vh + scale down, no fade
-            await window.gsap.to(current, {
+            tl.to(current, {
               y: "-50vh",
               scale: 0.92,
               duration: VT_DURATION,
               ease: VT_EASE,
               transformOrigin: "50% 0%"
-            });
+            }, 0);
+
+            tl.to(next, {
+              y: 0,
+              duration: VT_DURATION,
+              ease: VT_EASE
+            }, 0);
+
+            await tl;
           }
 
           try {
@@ -165,29 +182,12 @@ export function initBarba({ initContainer }) {
         },
 
         enter(data) {
-          var skipAnimation = isFromPanel();
-
+          // New container already positioned and animated in leave.
+          // Just ensure it's visible in case GSAP wasn't available.
           if (window.gsap) {
-            if (skipAnimation) {
-              // Panel navigation — page just appears
-              window.gsap.set(data.next.container, {
-                visibility: "visible"
-              });
-            } else {
-              // Standard navigation — new page starts below viewport
-              // Position it fixed over everything, stacked on top
-              window.gsap.set(data.next.container, {
-                position: "fixed",
-                top: 0,
-                left: 0,
-                width: "100%",
-                height: "100vh",
-                overflow: "hidden",
-                y: "100vh",
-                zIndex: 2,
-                visibility: "visible"
-              });
-            }
+            // Already handled in leave — nothing to do
+          } else {
+            data.next.container.style.visibility = "visible";
           }
         },
 
@@ -196,32 +196,13 @@ export function initBarba({ initContainer }) {
           reinitWebflowIX2();
           resetWCurrent();
 
-          var skipAnimation = isFromPanel();
           var container = data?.next?.container || document;
           var ns = getNamespace(data, "next");
 
-          if (skipAnimation) {
-            clearFromPanel();
-
-            await initContainer(container, {
-              isFirstLoad: false,
-              isNavigation: true,
-              namespace: ns
-            });
-            return;
-          }
-
-          // Slide new page up into view (stacked on top of old)
+          // Reset container to normal document flow
           if (window.gsap) {
-            await window.gsap.to(data.next.container, {
-              y: 0,
-              duration: VT_DURATION,
-              ease: VT_EASE
-            });
-
-            // Reset container to normal flow after animation
-            window.gsap.set(data.next.container, {
-              clearProps: "position,top,left,width,height,overflow,y,zIndex,transform"
+            window.gsap.set(container, {
+              clearProps: "position,top,left,width,height,overflow,y,zIndex,visibility,opacity,transform,clipPath"
             });
           }
 
