@@ -13,7 +13,7 @@ import { initTextScroll, initRevealScroll } from "./features/reveal-scroll.js";
 import { initPage } from "./pages/index.js";
 import { initBarba } from "./barba/index.js";
 
-const durationDefault = 0.8;
+var durationDefault = 0.8;
 
 function configureGSAPDefaults() {
   if (!window.gsap) return;
@@ -48,8 +48,8 @@ export async function initContainer(container, ctx = {}) {
   primeVarsLoad(container, ctx, "load");
 
   // One guarded starter for load reveals (can be called early by home.js)
-  let loadRevealsStarted = false;
-  const startLoadReveals = () => {
+  var loadRevealsStarted = false;
+  var startLoadReveals = function () {
     if (loadRevealsStarted) return;
     loadRevealsStarted = true;
 
@@ -74,7 +74,7 @@ export async function initContainer(container, ctx = {}) {
   startLenis();
 }
 
-onReady(() => {
+onReady(function () {
   configureGSAPDefaults();
 
   // Persistent nav (lives outside Barba container)

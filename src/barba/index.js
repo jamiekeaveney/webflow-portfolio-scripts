@@ -6,19 +6,24 @@ import {
   reinitWebflowIX2,
   resetWCurrent
 } from "../core/webflow.js";
+import { closeNav, isFromPanel, clearFromPanel } from "../core/nav.js";
 import { destroyPage } from "../pages/index.js";
+
+var VT_DURATION = 1.25;
+var VT_EASE = "expo.out";
 
 function resetScrollTop() {
   window.scrollTo(0, 0);
 }
 
-function getNamespace(data, which = "next") {
+function getNamespace(data, which) {
+  if (!which) which = "next";
   try {
-    const obj = data?.[which];
+    var obj = data?.[which];
     if (!obj) return "";
     if (obj.namespace) return obj.namespace;
 
-    const c = obj.container;
+    var c = obj.container;
     if (c?.getAttribute) return c.getAttribute("data-barba-namespace") || "";
 
     return "";
@@ -37,7 +42,7 @@ export function initBarba({ initContainer }) {
     if (!el) return false;
     if (el.hasAttribute?.("data-barba-prevent")) return true;
 
-    const href = el.getAttribute?.("href");
+    var href = el.getAttribute?.("href");
     if (!href) return false;
 
     if (el.target === "_blank") return true;
@@ -46,7 +51,7 @@ export function initBarba({ initContainer }) {
 
     if (/^https?:\/\//i.test(href)) {
       try {
-        const url = new URL(href, window.location.href);
+        var url = new URL(href, window.location.href);
         if (url.origin !== window.location.origin) return true;
       } catch (_) {}
     }
@@ -58,17 +63,20 @@ export function initBarba({ initContainer }) {
     history.scrollRestoration = "manual";
   } catch (_) {}
 
-  window.barba.hooks.leave((data) => {
+  window.barba.hooks.leave(function (data) {
+    closeNav();
     stopLenis();
     runCleanups();
     destroyLenis();
     killAllScrollTriggers();
 
-    const ns = getNamespace(data, "current");
+    var ns = getNamespace(data, "current");
     destroyPage(ns);
   });
 
-  window.barba.hooks.enter(() => resetScrollTop());
+  window.barba.hooks.enter(function () {
+    resetScrollTop();
+  });
 
   window.barba.init({
     preventRunning: true,
@@ -81,10 +89,9 @@ export function initBarba({ initContainer }) {
         async once(data) {
           resetWCurrent();
 
-          const container = data?.next?.container || document;
-          const ns = getNamespace(data, "next");
+          var container = data?.next?.container || document;
+          var ns = getNamespace(data, "next");
 
-          // IMPORTANT: await this (home loader runs here on first load)
           await initContainer(container, {
             isFirstLoad: true,
             isNavigation: false,
@@ -93,13 +100,25 @@ export function initBarba({ initContainer }) {
         },
 
         async leave(data) {
-          // Normal Barba fade only (no loader here)
-          if (window.gsap) {
-            await window.gsap.to(data.current.container, {
-              autoAlpha: 0,
-              duration: 0.5,
-              ease: "expo.out"
-            });
+          var skipAnimation = isFromPanel();
+
+          if (skipAnimation) {
+            // Panel navigation — no page transition, just remove
+            if (window.gsap) {
+              window.gsap.set(data.current.container, { autoAlpha: 0 });
+            }
+          } else {
+            // Standard navigation — old page slides up, scales down, fades
+            if (window.gsap) {
+              await window.gsap.to(data.current.container, {
+                yPercent: -50,
+                scale: 0.92,
+                autoAlpha: 0,
+                duration: VT_DURATION,
+                ease: VT_EASE,
+                transformOrigin: "50% 0%"
+              });
+            }
           }
 
           try {
@@ -108,8 +127,19 @@ export function initBarba({ initContainer }) {
         },
 
         enter(data) {
+          var skipAnimation = isFromPanel();
+
           if (window.gsap) {
-            window.gsap.set(data.next.container, { autoAlpha: 0 });
+            if (skipAnimation) {
+              // Panel navigation — new page appears instantly
+              window.gsap.set(data.next.container, { autoAlpha: 1 });
+            } else {
+              // Standard navigation — new page starts below viewport
+              window.gsap.set(data.next.container, {
+                y: "100vh",
+                autoAlpha: 1
+              });
+            }
           }
         },
 
@@ -118,22 +148,29 @@ export function initBarba({ initContainer }) {
           reinitWebflowIX2();
           resetWCurrent();
 
-          const container = data?.next?.container || document;
-          const ns = getNamespace(data, "next");
+          var container = data?.next?.container || document;
+          var ns = getNamespace(data, "next");
 
-          // IMPORTANT: await this too
           await initContainer(container, {
             isFirstLoad: false,
             isNavigation: true,
             namespace: ns
           });
 
-          if (window.gsap) {
-            await window.gsap.to(data.next.container, {
-              autoAlpha: 1,
-              duration: 0.5,
-              ease: "expo.out"
-            });
+          var skipAnimation = isFromPanel();
+          clearFromPanel();
+
+          if (skipAnimation) {
+            // Already visible — nothing to animate
+          } else {
+            // Slide new page up from bottom
+            if (window.gsap) {
+              await window.gsap.to(data.next.container, {
+                y: 0,
+                duration: VT_DURATION,
+                ease: VT_EASE
+              });
+            }
           }
         }
       }
