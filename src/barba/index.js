@@ -11,7 +11,7 @@ import { destroyPage } from "../pages/index.js";
 
 var VT_DURATION = 1.5;
 var VT_EASE = "expo.out";
-var VT_FADE_TO = 0; // set to 0.2–0.4 if you want only a slight fade instead of full fade-out
+var VT_FADE_TO = 0.5; // set to 0.2–0.4 if you want only a slight fade instead of full fade-out
 
 function resetScrollTop() {
   window.scrollTo(0, 0);
@@ -68,27 +68,28 @@ export function initBarba({ initContainer }) {
      HOOKS — run on every transition regardless of type
      ────────────────────────────────────────────────────── */
 
-  window.barba.hooks.enter(function (data) {
-    // Position new container fixed on top, ready for animation
-    if (window.gsap) {
-      window.gsap.set(data.next.container, {
-        position: "fixed",
-        top: 0,
-        left: 0,
-        width: "100%"
-      });
-    }
-  });
+  // ✅ Removed: forcing next.container to position:fixed
+  // That was making the incoming page not contribute to document height,
+  // so the old page remained the scroll owner until the transition finished.
 
   window.barba.hooks.after(function (data) {
-    // Reset new container to normal flow
+    // Reset containers to normal flow / remove any forced styles
     if (window.gsap) {
+      // Clear for next container (you already had this)
       window.gsap.set(data.next.container, {
         clearProps:
           "position,top,left,width,height,overflow,y,zIndex,visibility,opacity,transform,clipPath,scale"
       });
+
+      // Also clear for current container (in case we fixed it during leave)
+      if (data?.current?.container) {
+        window.gsap.set(data.current.container, {
+          clearProps: "position,top,left,width,height,overflow"
+        });
+      }
     }
 
+    // Your existing behaviour
     resetScrollTop();
     syncWebflowPageIdFromNextHtml(data?.next?.html || "");
     reinitWebflowIX2();
@@ -110,7 +111,7 @@ export function initBarba({ initContainer }) {
         name: "panel-nav",
         sync: false,
 
-        custom: function ({ trigger }) {
+        custom: function () {
           return isFromPanel();
         },
 
@@ -159,15 +160,35 @@ export function initBarba({ initContainer }) {
           var ns = getNamespace(data, "current");
           destroyPage(ns);
 
+          // ✅ Make the NEW page the scroll owner immediately
+          // 1) Jump to top right away (so user can scroll the incoming page instantly)
+          resetScrollTop();
+
           if (!window.gsap) return;
+
+          // 2) Freeze old page in place and remove it from document flow
+          window.gsap.set(data.current.container, {
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            overflow: "hidden",
+            zIndex: 1
+          });
+
+          // Ensure incoming page sits above while animating
+          window.gsap.set(data.next.container, {
+            position: "relative",
+            zIndex: 2
+          });
 
           var tl = window.gsap.timeline();
 
-          // Fade + move + scale out the old page
           tl.to(data.current.container, {
             y: "-50vh",
             scale: 0.95,
-            opacity: VT_FADE_TO, // ✅ fade out during the leave animation
+            opacity: VT_FADE_TO,
             duration: VT_DURATION,
             ease: VT_EASE,
             transformOrigin: "50% 0%"
