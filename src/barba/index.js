@@ -13,14 +13,11 @@ const VT_DURATION = 1.5;
 const VT_EASE = "expo.out";
 const VT_FADE_TO = 0.5; // 0 = full fade, 0.2–0.5 = subtle
 
-const resetScrollTop = () => window.scrollTo(0, 0);
-
 function getNamespace(data, which = "next") {
   const obj = data?.[which];
-  if (!obj) return "";
   return (
-    obj.namespace ||
-    obj.container?.getAttribute?.("data-barba-namespace") ||
+    obj?.namespace ||
+    obj?.container?.getAttribute?.("data-barba-namespace") ||
     ""
   );
 }
@@ -53,13 +50,12 @@ export function initBarba({ initContainer }) {
   } catch (_) {}
 
   window.barba.hooks.after((data) => {
-    // ✅ DO NOT reset scroll here — it nukes any scroll the user did during the transition
+    // Don't touch scroll here (keeps any scroll during transition)
     syncWebflowPageIdFromNextHtml(data?.next?.html || "");
     reinitWebflowIX2();
     resetWCurrent();
     clearFromPanel();
 
-    // keep this if you rely on it, but don’t touch scroll here
     window.gsap?.set(data.next.container, {
       clearProps: "position,top,left,width,height,overflow,zIndex,opacity,transform"
     });
@@ -109,29 +105,34 @@ export function initBarba({ initContainer }) {
           killAllScrollTriggers();
           destroyPage(getNamespace(data, "current"));
 
-          // ✅ If you want every navigation to start at top, do it ONCE here.
-          //    User scroll during transition will then persist (because we don't reset in hooks.after).
-          resetScrollTop();
-
           const gsap = window.gsap;
           if (!gsap) return;
 
-          // ✅ Make outgoing page non-scroll-owner immediately + transparent background immediately
+          const y = window.scrollY || window.pageYOffset || 0;
+
+          // Freeze outgoing page at CURRENT scroll position (so it animates out from where you are)
           gsap.set(data.current.container, {
             position: "fixed",
-            inset: 0,
+            top: 0,
+            left: 0,
             width: "100%",
             height: "100%",
             overflow: "hidden",
             zIndex: 1,
-            backgroundColor: "transparent" // 👈 outgoing .page-wrapper/container goes transparent instantly
+            y: -y, // ✅ keep current viewport slice
+            backgroundColor: "transparent"
+            // pointerEvents: "none"
           });
 
-          // Ensure incoming page sits above and is the one the browser scrolls
+          // Incoming above
           gsap.set(data.next.container, { zIndex: 2 });
 
+          // Now make the NEW page the scroll owner immediately (at top)
+          window.scrollTo(0, 0);
+
+          // Animate old page out (relative move, so it stays consistent)
           return gsap.timeline().to(data.current.container, {
-            y: "-50vh",
+            y: `-=${window.innerHeight * 0.5}`, // additional -50vh from frozen position
             scale: 0.95,
             opacity: VT_FADE_TO,
             duration: VT_DURATION,
