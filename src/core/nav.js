@@ -4,7 +4,7 @@
  * Mobile nav: close on link click + track origin for Barba transitions.
  *
  * When a .nav__panel-link triggers navigation, we:
- *  1. Snap the menu shut (no animation)
+ *  1. Let the menu animate closed naturally (CSS transition plays)
  *  2. Flag the navigation so Barba can skip the page transition
  */
 
@@ -21,19 +21,10 @@ export function clearFromPanel() {
   _fromPanel = false;
 }
 
-/** Instant-close the mobile menu */
+/** Close the mobile menu (lets CSS transition play) */
 export function closeNav() {
   var checkbox = document.getElementById("nav-toggle");
-  if (!checkbox || !checkbox.checked) return;
-
-  var panel = document.getElementById("nav-mobile-panel");
-  if (panel) panel.style.transition = "none";
-
-  checkbox.checked = false;
-
-  requestAnimationFrame(function () {
-    if (panel) panel.style.transition = "";
-  });
+  if (checkbox) checkbox.checked = false;
 }
 
 export function initNav() {
