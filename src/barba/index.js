@@ -12,9 +12,6 @@ import { destroyPage } from "../pages/index.js";
 var VT_DURATION = 1.25;
 var VT_EASE = "expo.out";
 
-// DEBUG — remove or change once transitions look correct
-var DEBUG_BODY_BG = "#ff00ff";
-
 function resetScrollTop() {
   window.scrollTo(0, 0);
 }
@@ -41,9 +38,6 @@ export function initBarba({ initContainer }) {
     return;
   }
 
-  // DEBUG
-  document.body.style.backgroundColor = DEBUG_BODY_BG;
-
   function preventBarba({ el } = {}) {
     if (!el) return false;
     if (el.hasAttribute?.("data-barba-prevent")) return true;
@@ -69,28 +63,129 @@ export function initBarba({ initContainer }) {
     history.scrollRestoration = "manual";
   } catch (_) {}
 
-  window.barba.hooks.leave(function (data) {
-    closeNav();
-    stopLenis();
-    runCleanups();
-    destroyLenis();
-    killAllScrollTriggers();
+  /* ──────────────────────────────────────────────────────
+     HOOKS — run on every transition regardless of type
+     ────────────────────────────────────────────────────── */
 
-    var ns = getNamespace(data, "current");
-    destroyPage(ns);
+  window.barba.hooks.enter(function (data) {
+    // Position new container fixed on top, ready for animation
+    if (window.gsap) {
+      window.gsap.set(data.next.container, {
+        position: "fixed",
+        top: 0,
+        left: 0,
+        width: "100%"
+      });
+    }
   });
 
-  window.barba.hooks.enter(function () {
+  window.barba.hooks.after(function (data) {
+    // Reset new container to normal flow
+    if (window.gsap) {
+      window.gsap.set(data.next.container, {
+        clearProps: "position,top,left,width,height,overflow,y,zIndex,visibility,opacity,transform,clipPath,scale"
+      });
+    }
+
     resetScrollTop();
+    syncWebflowPageIdFromNextHtml(data?.next?.html || "");
+    reinitWebflowIX2();
+    resetWCurrent();
+    clearFromPanel();
   });
+
+  /* ──────────────────────────────────────────────────────
+     INIT
+     ────────────────────────────────────────────────────── */
 
   window.barba.init({
     preventRunning: true,
     prevent: preventBarba,
 
     transitions: [
+
+      /* ── Mobile panel navigation — no page animation ── */
       {
-        name: "site",
+        name: "panel-nav",
+        sync: false,
+
+        custom: function ({ trigger }) {
+          return isFromPanel();
+        },
+
+        leave(data) {
+          closeNav();
+          stopLenis();
+          runCleanups();
+          destroyLenis();
+          killAllScrollTriggers();
+
+          var ns = getNamespace(data, "current");
+          destroyPage(ns);
+
+          // Instant removal
+          try {
+            data.current.container.remove();
+          } catch (_) {}
+        },
+
+        async enter(data) {},
+
+        async afterEnter(data) {
+          var container = data?.next?.container || document;
+          var ns = getNamespace(data, "next");
+
+          await initContainer(container, {
+            isFirstLoad: false,
+            isNavigation: true,
+            namespace: ns
+          });
+        }
+      },
+
+      /* ── Standard navigation — simultaneous slide ── */
+      {
+        name: "slide",
+        sync: true,
+
+        leave(data) {
+          closeNav();
+          stopLenis();
+          runCleanups();
+          destroyLenis();
+          killAllScrollTriggers();
+
+          var ns = getNamespace(data, "current");
+          destroyPage(ns);
+
+          if (!window.gsap) return;
+
+          var tl = window.gsap.timeline();
+
+          tl.to(data.current.container, {
+            y: "-50vh",
+            scale: 0.92,
+            duration: VT_DURATION,
+            ease: VT_EASE,
+            transformOrigin: "50% 0%"
+          });
+
+          return tl;
+        },
+
+        enter(data) {
+          if (!window.gsap) return;
+
+          var tl = window.gsap.timeline();
+
+          tl.from(data.next.container, {
+            y: "100vh",
+            duration: VT_DURATION,
+            ease: VT_EASE
+          });
+
+          return tl;
+        },
 
         async once(data) {
           resetWCurrent();
@@ -105,108 +200,9 @@ export function initBarba({ initContainer }) {
           });
         },
 
-        async leave(data) {
-          /*
-           * BOTH containers exist in the DOM right now.
-           * data.current.container = old page (visible)
-           * data.next.container    = new page (appended by Barba, hidden)
-           *
-           * We animate both simultaneously, then remove the old one.
-           */
-
-          var skipAnimation = isFromPanel();
-          var current = data.current.container;
-          var next = data.next.container;
-
-          if (skipAnimation) {
-            // Panel navigation — instant swap, no page animation.
-            // Menu close CSS transition plays on persistent header.
-            try {
-              current.remove();
-            } catch (_) {}
-            return;
-          }
-
-          // Standard navigation — simultaneous slide transition
-          if (window.gsap) {
-            var scrollY = window.scrollY || window.pageYOffset || 0;
-
-            // OLD PAGE: pin to viewport at current scroll offset,
-            // clip to viewport so only visible portion shows
-            window.gsap.set(current, {
-              position: "fixed",
-              top: -scrollY,
-              left: 0,
-              width: "100%",
-              zIndex: 0,
-              clipPath: "inset(" + scrollY + "px 0 0 0)"
-            });
-
-            // NEW PAGE: position below viewport, on top of old
-            window.gsap.set(next, {
-              position: "fixed",
-              top: 0,
-              left: 0,
-              width: "100%",
-              height: "100vh",
-              overflow: "hidden",
-              y: "100vh",
-              zIndex: 1,
-              visibility: "visible",
-              opacity: 1
-            });
-
-            // Animate both at the same time
-            var tl = window.gsap.timeline();
-
-            tl.to(current, {
-              y: "-50vh",
-              scale: 0.92,
-              duration: VT_DURATION,
-              ease: VT_EASE,
-              transformOrigin: "50% 0%"
-            }, 0);
-
-            tl.to(next, {
-              y: 0,
-              duration: VT_DURATION,
-              ease: VT_EASE
-            }, 0);
-
-            await tl;
-          }
-
-          try {
-            current.remove();
-          } catch (_) {}
-        },
-
-        enter(data) {
-          // New container already positioned and animated in leave.
-          // Just ensure it's visible in case GSAP wasn't available.
-          if (window.gsap) {
-            // Already handled in leave — nothing to do
-          } else {
-            data.next.container.style.visibility = "visible";
-          }
-        },
-
-        async afterEnter(data) {
-          syncWebflowPageIdFromNextHtml(data?.next?.html || "");
-          reinitWebflowIX2();
-          resetWCurrent();
-
+        async after(data) {
           var container = data?.next?.container || document;
           var ns = getNamespace(data, "next");
-
-          // Reset container to normal document flow
-          if (window.gsap) {
-            window.gsap.set(container, {
-              clearProps: "position,top,left,width,height,overflow,y,zIndex,visibility,opacity,transform,clipPath"
-            });
-          }
-
-          clearFromPanel();
 
           await initContainer(container, {
             isFirstLoad: false,
