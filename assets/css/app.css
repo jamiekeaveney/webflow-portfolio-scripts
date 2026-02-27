@@ -149,7 +149,34 @@ svg[viewBox] {
   overflow: visible !important;
 }
 
+/* Cursor progress during transitions */
 html.is-transitioning,
 html.is-transitioning * {
   cursor: progress !important;
+}
+
+/* Outgoing page: frozen snapshot at current scroll position */
+[data-barba="container"].is-leaving {
+  position: fixed;
+  left: 0;
+  top: calc(-1 * var(--freezeY, 0px));
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  z-index: 1;
+
+  background: transparent; /* make old page wrapper transparent immediately */
+  pointer-events: none;    /* old page cannot be interacted with */
+
+  will-change: transform, opacity;
+  transform: translateZ(0);
+}
+
+/* Incoming page sits above, remains scrollable immediately */
+[data-barba="container"].is-entering {
+  position: relative;
+  z-index: 2;
+
+  will-change: transform, opacity;
+  transform: translateZ(0);
 }
