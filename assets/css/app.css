@@ -149,34 +149,29 @@ svg[viewBox] {
   overflow: visible !important;
 }
 
-/* Cursor progress during transitions */
+/* ==========================================================================
+   Page transition — CSS layer
+   ========================================================================== */
+
+/* Busy cursor + block interactions during transition */
 html.is-transitioning,
 html.is-transitioning * {
   cursor: progress !important;
 }
 
-/* Outgoing page: frozen snapshot at current scroll position */
-[data-barba="container"].is-leaving {
-  position: fixed;
-  left: 0;
-  top: calc(-1 * var(--freezeY, 0px));
-  width: 100%;
-  height: 100vh;
-  overflow: hidden;
-  z-index: 1;
-
-  background: transparent; /* make old page wrapper transparent immediately */
-  pointer-events: none;    /* old page cannot be interacted with */
-
-  will-change: transform, opacity;
-  transform: translateZ(0);
+html.is-transitioning body {
+  pointer-events: none;
 }
 
-/* Incoming page sits above, remains scrollable immediately */
-[data-barba="container"].is-entering {
-  position: relative;
-  z-index: 2;
-
+/* GPU-promote both containers during transition so
+   transform/opacity run on compositor, off main thread */
+html.is-transitioning [data-barba="container"] {
   will-change: transform, opacity;
-  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+/* Prevent overscroll/bounce interfering with the slide */
+html.is-transitioning {
+  overflow: hidden;
 }
