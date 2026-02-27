@@ -11,13 +11,16 @@ import { destroyPage } from "../pages/index.js";
 
 const VT_DURATION = 1.5;
 const VT_EASE = "expo.out";
-const VT_FADE_TO = 0.5; // 0 = full fade, 0.2–0.5 = subtle
+const VT_FADE_TO = 0.5;
+
+const resetScrollTop = () => window.scrollTo(0, 0);
 
 function getNamespace(data, which = "next") {
   const obj = data?.[which];
+  if (!obj) return "";
   return (
-    obj?.namespace ||
-    obj?.container?.getAttribute?.("data-barba-namespace") ||
+    obj.namespace ||
+    obj.container?.getAttribute?.("data-barba-namespace") ||
     ""
   );
 }
@@ -50,7 +53,6 @@ export function initBarba({ initContainer }) {
   } catch (_) {}
 
   window.barba.hooks.after((data) => {
-    // Don't touch scroll here (keeps any scroll during transition)
     syncWebflowPageIdFromNextHtml(data?.next?.html || "");
     reinitWebflowIX2();
     resetWCurrent();
@@ -108,31 +110,31 @@ export function initBarba({ initContainer }) {
           const gsap = window.gsap;
           if (!gsap) return;
 
-          const y = window.scrollY || window.pageYOffset || 0;
+          // Capture scroll position BEFORE resetting
+          const scrollY = window.scrollY || window.pageYOffset || 0;
 
-          // Freeze outgoing page at CURRENT scroll position (so it animates out from where you are)
+          // Reset scroll so new page starts at top
+          resetScrollTop();
+
+          // Pin old page at its current visual position.
+          // top: -scrollY keeps the visible viewport portion in place.
           gsap.set(data.current.container, {
             position: "fixed",
-            top: 0,
+            top: -scrollY,
             left: 0,
             width: "100%",
-            height: "100%",
+            height: "auto",
             overflow: "hidden",
             zIndex: 1,
-            y: -y, // ✅ keep current viewport slice
             backgroundColor: "transparent"
-            // pointerEvents: "none"
           });
 
-          // Incoming above
+          // New page sits on top
           gsap.set(data.next.container, { zIndex: 2 });
 
-          // Now make the NEW page the scroll owner immediately (at top)
-          window.scrollTo(0, 0);
-
-          // Animate old page out (relative move, so it stays consistent)
+          // Animate the old page out from its current visual position
           return gsap.timeline().to(data.current.container, {
-            y: `-=${window.innerHeight * 0.5}`, // additional -50vh from frozen position
+            y: "-50vh",
             scale: 0.95,
             opacity: VT_FADE_TO,
             duration: VT_DURATION,
@@ -141,15 +143,28 @@ export function initBarba({ initContainer }) {
           });
         },
 
-        enter(data) {
+        async enter(data) {
           const gsap = window.gsap;
           if (!gsap) return;
 
-          return gsap.timeline().from(data.next.container, {
+          // Fire initContainer NOW so reveals start during the slide-in,
+          // not after it completes
+          const initPromise = initContainer(data?.next?.container || document, {
+            isFirstLoad: false,
+            isNavigation: true,
+            namespace: getNamespace(data, "next")
+          });
+
+          // Slide new page up — runs simultaneously with leave (sync: true)
+          // and simultaneously with initContainer/reveals
+          const tl = gsap.timeline().from(data.next.container, {
             y: "100vh",
             duration: VT_DURATION,
             ease: VT_EASE
           });
+
+          // Wait for both the animation and init to finish
+          await Promise.all([tl, initPromise]);
         },
 
         async once(data) {
@@ -161,13 +176,9 @@ export function initBarba({ initContainer }) {
           });
         },
 
-        async after(data) {
-          await initContainer(data?.next?.container || document, {
-            isFirstLoad: false,
-            isNavigation: true,
-            namespace: getNamespace(data, "next")
-          });
-        }
+        // after is handled by the global hooks.after above
+        // initContainer already ran in enter, so nothing needed here
+        after() {}
       }
     ]
   });
