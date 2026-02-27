@@ -33,12 +33,18 @@ html.lenis body {
   --_transform---off: 1;
 }
 
+/* Presentational states — style only, no passthrough */
 .is-active,
-[data-state~="checked"]:is(:checked, :has(:checked)),
 [data-state~="current"]:is(.w--current, :has(.w--current)),
-[data-state~="open"]:is(.w--open, :has(.w--open)),
-[data-state~="expanded"]:is([aria-expanded="true"], :has([aria-expanded="true"])),
 [data-state~="external"]:is([target="_blank"], :has([target="_blank"])) {
+  --_state---true: 0;
+  --_state---false: 1;
+}
+
+/* Structural states — style + passthrough */
+[data-state~="checked"]:is(:checked, :has(:checked)),
+[data-state~="open"]:is(.w--open, :has(.w--open)),
+[data-state~="expanded"]:is([aria-expanded="true"], :has([aria-expanded="true"])) {
   --_state---true: 0;
   --_state---false: 1;
   --_state---active: 1;
