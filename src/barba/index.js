@@ -135,7 +135,7 @@ export function initBarba({ initContainer }) {
 
           return gsap.timeline().to(data.current.container, {
             y: "-5vh",
-            scale: 0.95,
+            scale: 1,
             opacity: VT_FADE_TO,
             duration: VT_DURATION,
             ease: VT_EASE,
