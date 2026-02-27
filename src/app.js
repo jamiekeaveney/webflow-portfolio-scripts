@@ -2,6 +2,7 @@ import { onReady } from "./core/ready.js";
 import { runCleanups } from "./core/cleanup.js";
 import { safeRefreshScrollTrigger } from "./core/scrolltrigger.js";
 import { createLenis, startLenis } from "./core/lenis.js";
+import { initNav } from "./core/nav.js";
 
 import { initSplit } from "./features/split.js";
 import { initVideoAuto } from "./features/video-auto.js";
@@ -75,6 +76,9 @@ export async function initContainer(container, ctx = {}) {
 
 onReady(() => {
   configureGSAPDefaults();
+
+  // Persistent nav (lives outside Barba container)
+  initNav();
 
   // Boot Barba once
   initBarba({
