@@ -41,6 +41,7 @@ html.lenis body {
 [data-state~="external"]:is([target="_blank"], :has([target="_blank"])) {
   --_state---true: 0;
   --_state---false: 1;
+  --_state---active: 1;
 }
 
 @media (max-width: 991px) {
